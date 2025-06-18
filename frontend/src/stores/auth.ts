@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import Session from 'supertokens-web-js/recipe/session'
 import EmailPassword from 'supertokens-web-js/recipe/emailpassword'
+import { SocketService } from '@/services/socketService'
 
 export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = ref(false)
@@ -9,6 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<{ id: string; email?: string } | null>(null)
 
   const isLoggedIn = computed(() => isAuthenticated.value)
+  const userId = computed(() => user.value?.id)
 
   async function checkSession() {
     try {
@@ -19,6 +21,19 @@ export const useAuthStore = defineStore('auth', () => {
         const userId = await Session.getUserId()
         isAuthenticated.value = true
         user.value = { id: userId }
+        
+        // Connect to WebSocket when authenticated
+        const socketService = SocketService.getInstance()
+        try {
+          // Disconnect first if already connected to ensure fresh connection with auth
+          if (socketService.isConnected) {
+            socketService.disconnect()
+          }
+          await socketService.connect()
+          console.log('WebSocket connected for authenticated user:', userId)
+        } catch (error) {
+          console.error('Failed to connect to WebSocket:', error)
+        }
       } else {
         isAuthenticated.value = false
         user.value = null
@@ -89,6 +104,10 @@ export const useAuthStore = defineStore('auth', () => {
       await Session.signOut()
       isAuthenticated.value = false
       user.value = null
+      
+      // Disconnect WebSocket when signing out
+      const socketService = SocketService.getInstance()
+      socketService.disconnect()
     } catch (error) {
       console.error('Sign out error:', error)
     }
@@ -98,6 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isLoading,
     user,
+    userId,
     isLoggedIn,
     checkSession,
     signIn,

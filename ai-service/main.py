@@ -6,6 +6,7 @@ import redis
 import json
 import logging
 import os
+import requests
 from typing import Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -101,18 +102,32 @@ async def generate_image(
         if not flux_service.is_loaded:
             await flux_service.initialize()
         
-        result = await flux_service.generate_image(request.model_dump())
+        # Create progress callback that sends updates to backend
+        def progress_callback(progress: int, message: str):
+            try:
+                # Send progress to backend via HTTP
+                backend_url = os.getenv('BACKEND_URL', 'http://localhost:3000')
+                requests.post(f"{backend_url}/api/internal/progress", json={
+                    "user_id": request.user_id,
+                    "job_id": request.job_id,
+                    "progress": progress,
+                    "message": message
+                }, timeout=1)
+            except Exception as e:
+                logger.warning(f"Failed to send progress update: {e}")
+        
+        result = await flux_service.generate_image(request.model_dump(), progress_callback)
         
         if result["status"] == "completed":
             return GenerationResponse(
-                job_id="direct",
+                job_id=request.job_id,
                 status="completed",
                 message="Image generated successfully",
                 image_url=f"data:image/png;base64,{result['image_data']}"
             )
         else:
             return GenerationResponse(
-                job_id="direct",
+                job_id=request.job_id,
                 status="failed", 
                 message="Image generation failed",
                 error=result.get("error")

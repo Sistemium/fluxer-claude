@@ -41,9 +41,7 @@ class FluxService:
                             model_id,
                             torch_dtype=torch.float32,
                             use_safetensors=True,
-                            variant="fp32",
-                            low_cpu_mem_usage=True,
-                            device_map="auto"
+                            low_cpu_mem_usage=True
                         )
                     else:
                         self.pipeline = FluxPipeline.from_pretrained(
@@ -87,7 +85,7 @@ class FluxService:
             logger.error(f"Failed to load {self.model_id} model: {e}")
             raise
     
-    async def generate_image(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def generate_image(self, request_data: Dict[str, Any], progress_callback=None) -> Dict[str, Any]:
         """Generate an image from the request data"""
         if not self.is_loaded or not self.pipeline:
             raise ValueError("Model not loaded")
@@ -100,6 +98,9 @@ class FluxService:
             num_inference_steps = request_data.get("num_inference_steps", 50)
             seed = request_data.get("seed")
             
+            if progress_callback:
+                progress_callback(10, "Setting up generation...")
+            
             # Set seed for reproducibility
             if seed is not None:
                 torch.manual_seed(seed)
@@ -107,6 +108,16 @@ class FluxService:
                     torch.cuda.manual_seed(seed)
             
             logger.info(f"Generating image with prompt: {prompt[:50]}...")
+            
+            if progress_callback:
+                progress_callback(20, "Starting diffusion process...")
+            
+            # Create a progress callback for the pipeline
+            def step_callback(pipe, step: int, timestep: int, callback_kwargs):
+                if progress_callback:
+                    progress = 20 + int((step / num_inference_steps) * 70)  # 20% to 90%
+                    progress_callback(progress, f"Diffusion step {step}/{num_inference_steps}")
+                return callback_kwargs
             
             # Generate the image
             with torch.inference_mode():
@@ -117,9 +128,13 @@ class FluxService:
                     guidance_scale=guidance_scale,
                     num_inference_steps=num_inference_steps,
                     max_sequence_length=256,
+                    callback_on_step_end=step_callback
                 )
                 
                 image = result.images[0]
+            
+            if progress_callback:
+                progress_callback(95, "Converting image...")
             
             # Convert image to base64 for transmission
             buffer = io.BytesIO()

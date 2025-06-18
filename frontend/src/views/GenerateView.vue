@@ -96,11 +96,24 @@
             </div>
             <div v-else-if="imagesStore.isGenerating" class="text-center">
               <v-progress-circular
-                indeterminate
+                :model-value="imagesStore.generationProgress"
+                :rotate="360"
+                :size="100"
+                :width="8"
                 color="primary"
-                size="64"
-              ></v-progress-circular>
-              <p class="mt-4">Generating your image...</p>
+              >
+                <template v-slot:default>
+                  {{ Math.round(imagesStore.generationProgress) }}%
+                </template>
+              </v-progress-circular>
+              <p class="mt-4">{{ imagesStore.generationMessage || 'Generating your image...' }}</p>
+              <v-progress-linear
+                :model-value="imagesStore.generationProgress"
+                color="primary"
+                height="8"
+                rounded
+                class="mt-4"
+              ></v-progress-linear>
             </div>
             <div v-else class="text-center text-grey">
               <v-icon size="64" color="grey-lighten-1">mdi-image-outline</v-icon>

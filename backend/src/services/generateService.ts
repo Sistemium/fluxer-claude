@@ -2,6 +2,7 @@ import Bull from 'bull'
 import { Image } from '../models/Image.js'
 import logger from '../utils/logger.js'
 import axios from 'axios'
+import { SocketService } from './socketService.js'
 
 interface GenerationJobData {
   userId: string
@@ -112,6 +113,7 @@ export class GenerateService {
         
         const response = await axios.post(`${aiServiceUrl}/generate`, {
           user_id: userId,
+          job_id: job.id,
           prompt,
           width,
           height,
@@ -136,6 +138,10 @@ export class GenerateService {
           image.imageUrl = response.data.image_url
           image.status = 'completed'
           await image.save()
+          
+          // Send completion notification
+          const socketService = SocketService.getInstance()
+          socketService.emitCompleted(userId, job.id as string, response.data.image_url)
           
           logger.info(`Image generation completed for job ${job.id}`, { 
             imageUrlStart: response.data.image_url.substring(0, 50) + '...'
@@ -302,6 +308,7 @@ export class GenerateService {
       
       const response = await axios.post(`${aiServiceUrl}/generate`, {
         user_id: userId,
+        job_id: jobId,
         prompt,
         width,
         height,

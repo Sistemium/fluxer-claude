@@ -11,6 +11,7 @@ import { errorHandler } from './middleware/errorHandler.js'
 import { apiRoutes } from './routes/index.js'
 // import { authRoutes } from './routes/auth.js'
 import { middleware } from 'supertokens-node/framework/koa/index.js'
+import { SocketService } from './services/socketService.js'
 // import { GenerateService } from './services/generateService.js'
 
 const app = new Koa()
@@ -61,8 +62,12 @@ async function startServer() {
     app.use(router.routes())
     app.use(router.allowedMethods())
 
-    app.listen(PORT, () => {
-      logger.info(`Server running on port ${PORT}`)
+    // Initialize WebSocket server
+    const socketService = SocketService.getInstance()
+    const server = socketService.initialize(app)
+
+    server.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT} with WebSocket support`)
     })
   } catch (error) {
     logger.error('Failed to start server:', error)
