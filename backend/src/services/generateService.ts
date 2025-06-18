@@ -367,10 +367,11 @@ export class GenerateService {
           }
         } catch (error: any) {
           // Only log as warning if it's not a "already finished" error
-          if (error.message && error.message.includes('cannot transition')) {
-            logger.info(`Job ${jobId} already finished, skipping Bull queue completion`)
+          const errorMsg = error.message || error.toString()
+          if (errorMsg.includes('cannot transition') || errorMsg.includes('already') || errorMsg.includes('finished')) {
+            logger.info(`Job ${jobId} already finished, skipping Bull queue completion: ${errorMsg}`)
           } else {
-            logger.warn(`Could not mark job ${jobId} as completed:`, error.message)
+            logger.warn(`Could not mark job ${jobId} as completed:`, errorMsg)
           }
         }
       } else if (response.data.status === 'failed') {
