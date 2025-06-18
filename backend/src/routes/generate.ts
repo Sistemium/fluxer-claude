@@ -2,7 +2,7 @@ import Router from 'koa-router'
 import Joi from 'joi'
 import { GenerateService } from '../services/generateService.js'
 import logger from '../utils/logger.js'
-// import { verifySession } from 'supertokens-node/recipe/session/framework/koa/index.js'
+import { verifySession } from 'supertokens-node/recipe/session/framework/koa/index.js'
 
 export const generateRoutes = new Router()
 
@@ -14,7 +14,7 @@ const generateSchema = Joi.object({
   num_inference_steps: Joi.number().min(10).max(100).default(50)
 })
 
-generateRoutes.post('/', async (ctx: any) => {
+generateRoutes.post('/', verifySession(), async (ctx: any) => {
   try {
     logger.info('Step 1: Generate route called')
     
@@ -29,7 +29,7 @@ generateRoutes.post('/', async (ctx: any) => {
     }
 
     logger.info('Step 4: Validation passed')
-    const userId = 'test-user-id'
+    const userId = ctx.session.getUserId()
     
     logger.info('Step 5: Getting GenerateService instance')
     const generateService = GenerateService.getInstance()
@@ -65,11 +65,10 @@ generateRoutes.post('/', async (ctx: any) => {
   }
 })
 
-generateRoutes.get('/status/:jobId', async (ctx: any) => {
+generateRoutes.get('/status/:jobId', verifySession(), async (ctx: any) => {
   try {
     const { jobId } = ctx.params
-    // Temporary: use test user ID for debugging
-    const userId = 'test-user-id'
+    const userId = ctx.session.getUserId()
     
     const generateService = GenerateService.getInstance()
     const status = await generateService.getJobStatus(jobId as string, userId)

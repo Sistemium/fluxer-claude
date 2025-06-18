@@ -34,11 +34,23 @@ class FluxService:
             try:
                 if model_id == "black-forest-labs/FLUX.1-dev":
                     from diffusers import FluxPipeline
-                    self.pipeline = FluxPipeline.from_pretrained(
-                        model_id,
-                        torch_dtype=torch.bfloat16 if self.device == "cuda" else torch.float32,
-                        use_safetensors=True
-                    )
+                    
+                    # CPU optimizations for FLUX
+                    if self.device == "cpu":
+                        self.pipeline = FluxPipeline.from_pretrained(
+                            model_id,
+                            torch_dtype=torch.float32,
+                            use_safetensors=True,
+                            variant="fp32",
+                            low_cpu_mem_usage=True,
+                            device_map="auto"
+                        )
+                    else:
+                        self.pipeline = FluxPipeline.from_pretrained(
+                            model_id,
+                            torch_dtype=torch.bfloat16,
+                            use_safetensors=True
+                        )
                 else:
                     # Fallback to Stable Diffusion XL for development
                     from diffusers import StableDiffusionXLPipeline

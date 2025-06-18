@@ -1,10 +1,11 @@
 import Router from 'koa-router'
 import { ImageService } from '../services/imageService.js'
 import logger from '../utils/logger.js'
+import { verifySession } from 'supertokens-node/recipe/session/framework/koa/index.js'
 
 export const imageRoutes = new Router()
 
-imageRoutes.get('/', async (ctx: any) => {
+imageRoutes.get('/', verifySession(), async (ctx: any) => {
   try {
     const userId = ctx.session.getUserId()
     const page = parseInt(ctx.query.page as string) || 1
@@ -21,7 +22,7 @@ imageRoutes.get('/', async (ctx: any) => {
   }
 })
 
-imageRoutes.get('/:imageId', async (ctx: any) => {
+imageRoutes.get('/:imageId', verifySession(), async (ctx: any) => {
   try {
     const { imageId } = ctx.params
     const userId = ctx.session.getUserId()
@@ -43,7 +44,7 @@ imageRoutes.get('/:imageId', async (ctx: any) => {
   }
 })
 
-imageRoutes.delete('/:imageId', async (ctx: any) => {
+imageRoutes.delete('/:imageId', verifySession(), async (ctx: any) => {
   try {
     const { imageId } = ctx.params
     const userId = ctx.session.getUserId()

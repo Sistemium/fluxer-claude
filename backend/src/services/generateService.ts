@@ -120,15 +120,26 @@ export class GenerateService {
           seed
         }, { timeout: 300000 }) // 5 minute timeout
 
-        logger.info(`AI service response for job ${job.id}:`, response.data)
+        logger.info(`AI service response for job ${job.id}:`, {
+          status: response.data.status,
+          message: response.data.message,
+          hasImageUrl: !!response.data.image_url,
+          imageUrlLength: response.data.image_url?.length || 0
+        })
 
         if (response.data.status === 'completed') {
           // Update image record with result
+          if (!response.data.image_url) {
+            throw new Error('AI service completed but no image_url provided')
+          }
+          
           image.imageUrl = response.data.image_url
           image.status = 'completed'
           await image.save()
           
-          logger.info(`Image generation completed for job ${job.id}`, { imageUrl: response.data.image_url })
+          logger.info(`Image generation completed for job ${job.id}`, { 
+            imageUrlStart: response.data.image_url.substring(0, 50) + '...'
+          })
           return { success: true, imageUrl: response.data.image_url }
         } else if (response.data.status === 'failed') {
           throw new Error(response.data.error || 'AI service failed to generate image')
@@ -299,22 +310,40 @@ export class GenerateService {
         seed
       }, { timeout: 300000 }) // 5 minute timeout
 
-      logger.info(`AI service response for job ${jobId}:`, response.data)
+      logger.info(`AI service response for job ${jobId}:`, {
+        status: response.data.status,
+        message: response.data.message,
+        hasImageUrl: !!response.data.image_url,
+        imageUrlLength: response.data.image_url?.length || 0
+      })
 
       if (response.data.status === 'completed') {
         // Update image record with result
+        if (!response.data.image_url) {
+          throw new Error('AI service completed but no image_url provided')
+        }
+        
         image.imageUrl = response.data.image_url
         image.status = 'completed'
         await image.save()
         
-        logger.info(`Image generation completed for job ${jobId}`, { imageUrl: response.data.image_url })
+        logger.info(`Image generation completed for job ${jobId}`, { 
+          imageUrlStart: response.data.image_url.substring(0, 50) + '...'
+        })
         
         // Mark job as completed in Bull queue
         try {
-          await job.moveToCompleted(JSON.stringify({ success: true, imageUrl: response.data.image_url }), true)
-          logger.info(`Job ${jobId} marked as completed in Bull queue`)
-        } catch (error) {
-          logger.error(`Error marking job ${jobId} as completed:`, error)
+          const jobState = await job.getState()
+          logger.info(`Job ${jobId} current state before completion: ${jobState}`)
+          
+          if (jobState === 'active' || jobState === 'waiting') {
+            await job.moveToCompleted(JSON.stringify({ success: true, imageUrl: response.data.image_url }), true)
+            logger.info(`Job ${jobId} marked as completed in Bull queue`)
+          } else {
+            logger.info(`Job ${jobId} already in final state: ${jobState}, skipping completion`)
+          }
+        } catch (error: any) {
+          logger.warn(`Could not mark job ${jobId} as completed (may already be finished):`, error.message)
         }
       } else if (response.data.status === 'failed') {
         image.status = 'failed'
@@ -328,10 +357,15 @@ export class GenerateService {
       logger.error(`Error force processing job ${jobId}:`, error)
       
       // Update image record with failure
-      const image = await Image.findOne({ jobId })
-      if (image) {
-        image.status = 'failed'
-        await image.save()
+      try {
+        const image = await Image.findOne({ jobId })
+        if (image && image.status !== 'completed') {
+          image.status = 'failed'
+          await image.save()
+          logger.info(`Marked job ${jobId} as failed in database`)
+        }
+      } catch (dbError) {
+        logger.error(`Error updating job ${jobId} status to failed:`, dbError)
       }
     }
   }
