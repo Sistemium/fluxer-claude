@@ -6,6 +6,7 @@ from PIL import Image
 import io
 import base64
 from typing import Optional, Dict, Any
+from huggingface_hub import login
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +15,21 @@ class FluxService:
         self.pipeline: Optional[FluxPipeline] = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.is_loaded = False
+        self.model_id = os.getenv("MODEL_NAME", "black-forest-labs/FLUX.1-dev")
         
     async def initialize(self):
-        """Initialize the Flux.1-dev model"""
+        """Initialize the AI model"""
         try:
-            logger.info(f"Loading Flux.1-dev model on {self.device}...")
+            # Login to HuggingFace if token is provided
+            hf_token = os.getenv("HUGGINGFACE_TOKEN")
+            if hf_token:
+                logger.info("Logging in to HuggingFace...")
+                login(token=hf_token)
             
-            # Load the pipeline - use SDXL for development if FLUX access is not available
-            model_id = os.getenv("MODEL_NAME", "black-forest-labs/FLUX.1-dev")
+            logger.info(f"Loading {self.model_id} model on {self.device}...")
+            
+            # Load the pipeline
+            model_id = self.model_id
             
             try:
                 if model_id == "black-forest-labs/FLUX.1-dev":
@@ -61,10 +69,10 @@ class FluxService:
                 self.pipeline.enable_model_cpu_offload()
             
             self.is_loaded = True
-            logger.info("Flux.1-dev model loaded successfully")
+            logger.info(f"{self.model_id} model loaded successfully")
             
         except Exception as e:
-            logger.error(f"Failed to load Flux.1-dev model: {e}")
+            logger.error(f"Failed to load {self.model_id} model: {e}")
             raise
     
     async def generate_image(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -131,7 +139,7 @@ class FluxService:
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the loaded model"""
         return {
-            "model_name": "FLUX.1-dev",
+            "model_name": self.model_id,
             "device": self.device,
             "is_loaded": self.is_loaded,
             "memory_usage": torch.cuda.memory_allocated() if torch.cuda.is_available() else 0

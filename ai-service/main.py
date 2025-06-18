@@ -32,20 +32,9 @@ async def lifespan(app: FastAPI):
     # Initialize services
     logger.info("Initializing AI services...")
     
-    # Initialize Redis connection
-    redis_client = redis.Redis(
-        host=os.getenv('REDIS_HOST', 'localhost'),
-        port=int(os.getenv('REDIS_PORT', '6379')),
-        decode_responses=True
-    )
-    
-    # Initialize Flux service
+    # Initialize Flux service (lazy loading)
     flux_service = FluxService()
-    await flux_service.initialize()
-    
-    # Initialize queue service
-    queue_service = QueueService(redis_client, flux_service)
-    await queue_service.start_worker()
+    queue_service = None
     
     logger.info("AI services initialized successfully")
     
@@ -53,12 +42,10 @@ async def lifespan(app: FastAPI):
     
     # Cleanup
     logger.info("Shutting down AI services...")
-    if queue_service:
-        await queue_service.stop_worker()
 
 app = FastAPI(
-    title="Fluxer AI Service",
-    description="AI image generation service using Flux.1-dev",
+    title="Fluxer AI Service", 
+    description=f"AI image generation service using {os.getenv('MODEL_NAME', 'AI model')}",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -74,39 +61,65 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "Fluxer AI Service", "status": "running"}
+    model_name = os.getenv('MODEL_NAME', 'AI model')
+    return {"message": f"Fluxer AI Service - {model_name}", "status": "running"}
 
 @app.get("/health")
 async def health_check():
-    gpu_available = torch.cuda.is_available()
-    gpu_count = torch.cuda.device_count() if gpu_available else 0
-    
-    return {
-        "status": "healthy",
-        "gpu_available": gpu_available,
-        "gpu_count": gpu_count,
-        "model_loaded": flux_service is not None and flux_service.is_loaded,
-    }
+    try:
+        gpu_available = torch.cuda.is_available()
+        gpu_count = torch.cuda.device_count() if gpu_available else 0
+        
+        model_name = os.getenv('MODEL_NAME', 'AI model')
+        return {
+            "status": "healthy",
+            "gpu_available": gpu_available,
+            "gpu_count": gpu_count,
+            "model_loaded": flux_service is not None and flux_service.is_loaded,
+            "model_name": model_name,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
 
 @app.post("/generate", response_model=GenerationResponse)
 async def generate_image(
     request: GenerationRequest,
     background_tasks: BackgroundTasks
 ):
-    if not queue_service:
-        raise HTTPException(status_code=503, detail="Queue service not initialized")
+    if not flux_service:
+        raise HTTPException(status_code=503, detail="Flux service not initialized")
     
     try:
-        job_id = await queue_service.add_job(request.dict())
+        # Generate image directly without queue for now
+        if not flux_service.is_loaded:
+            await flux_service.initialize()
         
-        return GenerationResponse(
-            job_id=job_id,
-            status="queued",
-            message="Image generation job queued successfully"
-        )
+        result = await flux_service.generate_image(request.model_dump())
+        
+        if result["status"] == "completed":
+            return GenerationResponse(
+                job_id="direct",
+                status="completed",
+                message="Image generated successfully",
+                image_url=f"data:image/png;base64,{result['image_data']}"
+            )
+        else:
+            return GenerationResponse(
+                job_id="direct",
+                status="failed", 
+                message="Image generation failed",
+                error=result.get("error")
+            )
     except Exception as e:
-        logger.error(f"Error queuing generation job: {e}")
-        raise HTTPException(status_code=500, detail="Failed to queue generation job")
+        logger.error(f"Error generating image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate image")
 
 @app.get("/job/{job_id}")
 async def get_job_status(job_id: str):
@@ -126,9 +139,9 @@ async def get_job_status(job_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        app,
         host="0.0.0.0",
         port=8000,
         log_level="info",
-        reload=True
+        reload=False
     )

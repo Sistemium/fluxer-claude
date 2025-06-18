@@ -121,6 +121,9 @@ class QueueService:
                     logger.info(f"Processing job {job['id']}")
                     await self.process_job(job)
                     
+            except redis.exceptions.TimeoutError:
+                # This is normal - just means no jobs in queue
+                continue
             except Exception as e:
                 logger.error(f"Error in queue worker: {e}")
                 await asyncio.sleep(1)

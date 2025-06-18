@@ -4,7 +4,11 @@
       "Bash(mkdir:*)",
       "Bash(npm create:*)",
       "Bash(npm init:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)"
     ],
     "deny": []
   }
