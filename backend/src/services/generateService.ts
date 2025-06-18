@@ -126,8 +126,16 @@ export class GenerateService {
           status: response.data.status,
           message: response.data.message,
           hasImageUrl: !!response.data.image_url,
-          imageUrlLength: response.data.image_url?.length || 0
+          imageUrlLength: response.data.image_url?.length || 0,
+          responseKeys: Object.keys(response.data)
         })
+        
+        // Log full response data for debugging (without image data)
+        const debugData = { ...response.data }
+        if (debugData.image_url && debugData.image_url.length > 100) {
+          debugData.image_url = debugData.image_url.substring(0, 100) + '...[truncated]'
+        }
+        logger.info(`Full AI service response for job ${job.id}:`, debugData)
 
         if (response.data.status === 'completed') {
           // Update image record with result
@@ -141,7 +149,9 @@ export class GenerateService {
           
           // Send completion notification
           const socketService = SocketService.getInstance()
+          logger.info(`Sending WebSocket completion notification for job ${job.id} to user ${userId}`)
           socketService.emitCompleted(userId, job.id as string, response.data.image_url)
+          logger.info(`WebSocket completion notification sent for job ${job.id}`)
           
           logger.info(`Image generation completed for job ${job.id}`, { 
             imageUrlStart: response.data.image_url.substring(0, 50) + '...'
@@ -334,6 +344,12 @@ export class GenerateService {
         image.status = 'completed'
         await image.save()
         
+        // Send completion notification via WebSocket
+        const socketService = SocketService.getInstance()
+        logger.info(`Sending WebSocket completion notification for job ${jobId} to user ${userId}`)
+        socketService.emitCompleted(userId, jobId, response.data.image_url)
+        logger.info(`WebSocket completion notification sent for job ${jobId}`)
+        
         logger.info(`Image generation completed for job ${jobId}`, { 
           imageUrlStart: response.data.image_url.substring(0, 50) + '...'
         })
@@ -347,10 +363,15 @@ export class GenerateService {
             await job.moveToCompleted(JSON.stringify({ success: true, imageUrl: response.data.image_url }), true)
             logger.info(`Job ${jobId} marked as completed in Bull queue`)
           } else {
-            logger.info(`Job ${jobId} already in final state: ${jobState}, skipping completion`)
+            logger.info(`Job ${jobId} already in final state: ${jobState}, skipping Bull queue completion`)
           }
         } catch (error: any) {
-          logger.warn(`Could not mark job ${jobId} as completed (may already be finished):`, error.message)
+          // Only log as warning if it's not a "already finished" error
+          if (error.message && error.message.includes('cannot transition')) {
+            logger.info(`Job ${jobId} already finished, skipping Bull queue completion`)
+          } else {
+            logger.warn(`Could not mark job ${jobId} as completed:`, error.message)
+          }
         }
       } else if (response.data.status === 'failed') {
         image.status = 'failed'

@@ -88,10 +88,13 @@ export const useImagesStore = defineStore('images', () => {
 
       // Subscribe to completion
       socketService.onCompleted(jobId, async (completed) => {
+        console.log('WebSocket completion event received for job:', jobId, completed)
         try {
           // Fetch the full image data from API
+          console.log('Fetching image status from API for job:', jobId)
           const response = await api.get(`/generate/status/${jobId}`)
           const status = response.data
+          console.log('API status response:', status)
 
           if (status.status === 'completed' && status.image) {
             const image: GeneratedImage = {
@@ -103,14 +106,19 @@ export const useImagesStore = defineStore('images', () => {
               createdAt: status.image.createdAt
             }
             
+            console.log('Adding completed image to store:', image.id)
             // Add to images list
             images.value.unshift(image)
             
             // Cleanup
             socketService.unsubscribe(jobId)
             resolve(image)
+          } else {
+            console.warn('Completion event received but image not ready:', status)
+            reject(new Error('Image not ready'))
           }
         } catch (error) {
+          console.error('Error handling completion event:', error)
           socketService.unsubscribe(jobId)
           reject(error)
         }

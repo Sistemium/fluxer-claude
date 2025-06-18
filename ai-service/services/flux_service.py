@@ -136,25 +136,38 @@ class FluxService:
             if progress_callback:
                 progress_callback(95, "Converting image...")
             
-            # Convert image to base64 for transmission
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            image_b64 = base64.b64encode(buffer.getvalue()).decode()
-            
-            logger.info("Image generation completed successfully")
-            
-            return {
-                "status": "completed",
-                "image_data": image_b64,
-                "metadata": {
-                    "prompt": prompt,
-                    "width": width,
-                    "height": height,
-                    "guidance_scale": guidance_scale,
-                    "num_inference_steps": num_inference_steps,
-                    "seed": seed
+            try:
+                # Convert image to base64 for transmission
+                logger.info("Starting image conversion to base64...")
+                buffer = io.BytesIO()
+                image.save(buffer, format="PNG")
+                logger.info(f"Image saved to buffer, size: {buffer.tell()} bytes")
+                
+                image_b64 = base64.b64encode(buffer.getvalue()).decode()
+                logger.info(f"Image converted to base64, length: {len(image_b64)} characters")
+                
+                if progress_callback:
+                    progress_callback(100, "Image generation completed!")
+                
+                logger.info("Image generation completed successfully")
+                
+                return {
+                    "status": "completed",
+                    "image_data": image_b64,
+                    "metadata": {
+                        "prompt": prompt,
+                        "width": width,
+                        "height": height,
+                        "guidance_scale": guidance_scale,
+                        "num_inference_steps": num_inference_steps,
+                        "seed": seed
+                    }
                 }
-            }
+            except Exception as e:
+                logger.error(f"Error during image conversion: {e}")
+                if progress_callback:
+                    progress_callback(95, f"Image conversion failed: {str(e)}")
+                raise
             
         except Exception as e:
             logger.error(f"Error generating image: {e}")
