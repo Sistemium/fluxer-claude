@@ -1,7 +1,7 @@
 import Bull from 'bull'
 import { Image } from '../models/Image.js'
 import logger from '../utils/logger.js'
-// import axios from 'axios'
+import axios from 'axios'
 
 interface GenerationJobData {
   userId: string
@@ -108,8 +108,7 @@ export class GenerateService {
         const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000'
         logger.info(`Calling AI service at ${aiServiceUrl} for job ${job.id}`)
         
-        // Import axios again since we commented it out
-        const axios = (await import('axios')).default
+        // Use axios directly
         
         const response = await axios.post(`${aiServiceUrl}/generate`, {
           user_id: userId,
@@ -119,41 +118,23 @@ export class GenerateService {
           guidance_scale,
           num_inference_steps,
           seed
-        })
+        }, { timeout: 300000 }) // 5 minute timeout
 
-        const aiJobId = response.data.job_id
-        logger.info(`AI service job created: ${aiJobId}`)
+        logger.info(`AI service response for job ${job.id}:`, response.data)
 
-        // Poll AI service for completion
-        let attempts = 0
-        const maxAttempts = 60 // 5 minutes with 5-second intervals
-        
-        while (attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 5000))
+        if (response.data.status === 'completed') {
+          // Update image record with result
+          image.imageUrl = response.data.image_url
+          image.status = 'completed'
+          await image.save()
           
-          const statusResponse = await axios.get(`${aiServiceUrl}/job/${aiJobId}`)
-          const status = statusResponse.data
-          
-          logger.info(`AI job ${aiJobId} status: ${status.status}, progress: ${status.progress}%`)
-          
-          if (status.status === 'completed') {
-            // Update image record with result
-            image.imageUrl = status.image_url
-            image.status = 'completed'
-            await image.save()
-            
-            logger.info(`Image generation completed for job ${job.id}`, { imageUrl: status.image_url })
-            return { success: true, imageUrl: status.image_url }
-          }
-          
-          if (status.status === 'failed') {
-            throw new Error(status.error || 'AI service failed to generate image')
-          }
-          
-          attempts++
+          logger.info(`Image generation completed for job ${job.id}`, { imageUrl: response.data.image_url })
+          return { success: true, imageUrl: response.data.image_url }
+        } else if (response.data.status === 'failed') {
+          throw new Error(response.data.error || 'AI service failed to generate image')
+        } else {
+          throw new Error(`Unexpected AI service response status: ${response.data.status}`)
         }
-        
-        throw new Error('Image generation timed out')
         
       } catch (error) {
         logger.error(`Image generation failed for job ${job.id}:`, error)
@@ -281,57 +262,77 @@ export class GenerateService {
 
       logger.info(`Found job ${jobId}, forcing processing`)
       
-      // Manually trigger job processing
+      // Manually trigger job processing using the same logic as regular processing
       const { userId, prompt, width, height, guidance_scale, num_inference_steps, seed } = job.data as GenerationJobData
 
-      // Create image record in database
-      const image = new Image({
-        userId,
+      // Create image record in database if it doesn't exist
+      let image = await Image.findOne({ jobId })
+      if (!image) {
+        image = new Image({
+          userId,
+          prompt,
+          width,
+          height,
+          guidanceScale: guidance_scale,
+          numInferenceSteps: num_inference_steps,
+          seed,
+          jobId: job.id,
+          status: 'generating'
+        })
+        await image.save()
+        logger.info(`Image record created for job ${jobId}`, { imageId: image._id })
+      }
+
+      // Call real AI service
+      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000'
+      logger.info(`Calling AI service at ${aiServiceUrl} for job ${jobId}`)
+      
+      // Use axios directly
+      
+      const response = await axios.post(`${aiServiceUrl}/generate`, {
+        user_id: userId,
         prompt,
         width,
         height,
-        guidanceScale: guidance_scale,
-        numInferenceSteps: num_inference_steps,
-        seed,
-        jobId: job.id,
-        status: 'generating'
-      })
-      await image.save()
-      logger.info(`Image record created for job ${jobId}`, { imageId: image._id })
+        guidance_scale,
+        num_inference_steps,
+        seed
+      }, { timeout: 300000 }) // 5 minute timeout
 
-      // TEMPORARY: Mock AI service for testing
-      logger.info(`Calling AI service for job ${jobId}`)
-      
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      
-      // Mock successful response
-      const mockImageUrl = `https://picsum.photos/seed/${jobId}/${width}/${height}`
-      
-      // Update image record with result
-      image.imageUrl = mockImageUrl
-      image.status = 'completed'
-      await image.save()
-      
-      logger.info(`Image generation completed for job ${jobId}`, { imageUrl: mockImageUrl })
-      
-      // Mark job as completed in Bull queue
-      try {
-        await job.moveToCompleted(JSON.stringify({ success: true, imageUrl: mockImageUrl }), true)
-        logger.info(`Job ${jobId} marked as completed in Bull queue`)
-      } catch (error) {
-        logger.error(`Error marking job ${jobId} as completed:`, error)
-        // Try alternative method
+      logger.info(`AI service response for job ${jobId}:`, response.data)
+
+      if (response.data.status === 'completed') {
+        // Update image record with result
+        image.imageUrl = response.data.image_url
+        image.status = 'completed'
+        await image.save()
+        
+        logger.info(`Image generation completed for job ${jobId}`, { imageUrl: response.data.image_url })
+        
+        // Mark job as completed in Bull queue
         try {
-          await job.finished()
-          logger.info(`Job ${jobId} finished successfully`)
-        } catch (finishError) {
-          logger.error(`Error finishing job ${jobId}:`, finishError)
+          await job.moveToCompleted(JSON.stringify({ success: true, imageUrl: response.data.image_url }), true)
+          logger.info(`Job ${jobId} marked as completed in Bull queue`)
+        } catch (error) {
+          logger.error(`Error marking job ${jobId} as completed:`, error)
         }
+      } else if (response.data.status === 'failed') {
+        image.status = 'failed'
+        await image.save()
+        throw new Error(response.data.error || 'AI service failed to generate image')
+      } else {
+        throw new Error(`Unexpected AI service response status: ${response.data.status}`)
       }
       
     } catch (error) {
       logger.error(`Error force processing job ${jobId}:`, error)
+      
+      // Update image record with failure
+      const image = await Image.findOne({ jobId })
+      if (image) {
+        image.status = 'failed'
+        await image.save()
+      }
     }
   }
 }
