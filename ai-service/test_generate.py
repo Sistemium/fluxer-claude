@@ -11,10 +11,10 @@ def test_generate():
     payload = {
         "user_id": "test_user",
         "prompt": "A cute cat sitting on a table",
-        "width": 512,
-        "height": 512,
+        "width": 128,
+        "height": 128,
         "guidance_scale": 7.5,
-        "num_inference_steps": 20,  # Reduced for faster testing
+        "num_inference_steps": 5,  # Reduced for faster testing
         "seed": 42
     }
     
