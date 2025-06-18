@@ -36,6 +36,36 @@
                 </v-col>
               </v-row>
 
+              <v-row class="mt-2">
+                <v-col cols="6">
+                  <v-text-field
+                    v-model="num_inference_steps"
+                    type="number"
+                    :min="10"
+                    :max="100"
+                    label="Inference Steps"
+                    variant="outlined"
+                    :disabled="imagesStore.isGenerating"
+                    hint="10-100 steps (more = better quality, slower)"
+                    persistent-hint
+                  ></v-text-field>
+                </v-col>
+                <v-col cols="6">
+                  <v-text-field
+                    v-model="guidance_scale"
+                    type="number"
+                    :min="1"
+                    :max="20"
+                    :step="0.5"
+                    label="Guidance Scale"
+                    variant="outlined"
+                    :disabled="imagesStore.isGenerating"
+                    hint="1-20 (higher = follows prompt more strictly)"
+                    persistent-hint
+                  ></v-text-field>
+                </v-col>
+              </v-row>
+
               <v-btn
                 type="submit"
                 color="primary"
