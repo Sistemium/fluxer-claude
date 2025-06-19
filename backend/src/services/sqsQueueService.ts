@@ -1,4 +1,5 @@
 import AWS from 'aws-sdk'
+import { Image } from '../models/Image.js'
 import logger from '../utils/logger.js'
 import axios from 'axios'
 import { SocketService } from './socketService.js'
@@ -71,9 +72,25 @@ export class SQSQueueService {
       }
       
       const result = await this.sqs.sendMessage(params).promise()
+      
+      // Create image record in database
+      const image = new Image({
+        userId: data.userId,
+        prompt: data.prompt,
+        width: data.width,
+        height: data.height,
+        guidanceScale: data.guidance_scale,
+        numInferenceSteps: data.num_inference_steps,
+        seed: data.seed,
+        jobId,
+        status: 'generating'
+      })
+      await image.save()
+      
       logger.info('Job added to SQS queue successfully', { 
         jobId, 
-        messageId: result.MessageId 
+        messageId: result.MessageId,
+        imageId: image._id
       })
       
       return jobId
@@ -165,6 +182,14 @@ export class SQSQueueService {
           throw new Error('AI service completed but no image_url provided')
         }
         
+        // Update image record with result
+        const image = await Image.findOne({ jobId: jobData.jobId })
+        if (image) {
+          image.imageUrl = response.data.image_url
+          image.status = 'completed'
+          await image.save()
+        }
+        
         // Send WebSocket completion notification
         const socketService = SocketService.getInstance()
         socketService.emitCompleted(jobData.userId, jobData.jobId, response.data.image_url)
@@ -182,6 +207,17 @@ export class SQSQueueService {
       
     } catch (error) {
       logger.error(`Job ${jobData.jobId} failed`, error)
+      
+      // Update image record with failure
+      try {
+        const image = await Image.findOne({ jobId: jobData.jobId })
+        if (image) {
+          image.status = 'failed'
+          await image.save()
+        }
+      } catch (dbError) {
+        logger.error(`Error updating job ${jobData.jobId} status to failed`, dbError)
+      }
       
       // Send WebSocket error notification
       const socketService = SocketService.getInstance()
@@ -229,14 +265,31 @@ export class SQSQueueService {
     logger.info(`Getting job status for jobId: ${jobId}, userId: ${userId}`)
     
     try {
-      // For now, return basic status since we don't have database integration
-      // TODO: Integrate with Image model when available
+      // Check database for job status
+      const image = await Image.findOne({ jobId, userId })
+      
+      if (!image) {
+        logger.info(`Job ${jobId} not found for user ${userId}`)
+        return null
+      }
+
+      logger.info(`Job found in database`, { 
+        jobId, 
+        status: image.status,
+        imageId: image._id 
+      })
+
       return {
         jobId,
-        status: 'processing',
-        progress: 50,
-        image: null,
-        error: null
+        status: image.status,
+        progress: image.status === 'completed' ? 100 : (image.status === 'generating' ? 50 : 0),
+        image: image.status === 'completed' ? {
+          id: image._id,
+          imageUrl: image.imageUrl,
+          prompt: image.prompt,
+          createdAt: image.createdAt
+        } : null,
+        error: image.status === 'failed' ? 'Generation failed' : null
       }
     } catch (error) {
       logger.error(`Error getting job status for ${jobId}`, error)

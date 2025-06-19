@@ -1,4 +1,3 @@
-// import { Image } from '../models/Image.js'
 import logger from '../utils/logger.js'
 import { SQSQueueService } from './sqsQueueService.js'
 
