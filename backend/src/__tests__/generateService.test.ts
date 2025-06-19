@@ -79,7 +79,7 @@ describe('GenerateService', () => {
     it('should return job status when job exists', async () => {
       const mockStatus = {
         jobId: 'test-job-id',
-        status: 'processing',
+        status: 'generating' as const,
         progress: 50,
         image: null,
         error: null,
@@ -95,7 +95,7 @@ describe('GenerateService', () => {
     it('should return null when job does not exist', async () => {
       const mockStatus = {
         jobId: 'non-existent-job',
-        status: 'processing',
+        status: 'generating' as const,
         progress: 50,
         image: null,
         error: null,
