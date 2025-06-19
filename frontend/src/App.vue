@@ -11,6 +11,15 @@
           <v-btn to="/" variant="text">Home</v-btn>
           <v-btn to="/generate" variant="text">Generate</v-btn>
           <v-btn to="/gallery" variant="text">Gallery</v-btn>
+          <v-btn 
+            v-if="authStore.isAdmin" 
+            to="/admin" 
+            variant="text" 
+            color="orange"
+          >
+            <v-icon left>mdi-cog</v-icon>
+            Admin
+          </v-btn>
           
           <v-menu>
             <template v-slot:activator="{ props }">

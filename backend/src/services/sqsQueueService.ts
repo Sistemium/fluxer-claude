@@ -4,6 +4,7 @@ import { Image } from '../models/Image.js'
 import logger from '../utils/logger.js'
 import axios from 'axios'
 import { SocketService } from './socketService.js'
+import { SpotInstanceService } from './spotInstanceService.js'
 import { v4 as uuidv4 } from 'uuid'
 
 interface GenerationJobData {
@@ -162,8 +163,16 @@ export class SQSQueueService {
     try {
       logger.info(`Starting AI service call for job ${jobData.jobId}`)
 
-      // Call AI service
-      const aiServiceUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000'
+      // Get dynamic AI service URL from active Spot Instance
+      const spotInstanceService = SpotInstanceService.getInstance()
+      const aiServiceUrl = await spotInstanceService.getActiveAIServiceUrl() || 
+                          process.env.AI_SERVICE_URL || 
+                          'http://localhost:8000'
+      
+      if (!aiServiceUrl || aiServiceUrl === 'http://localhost:8000') {
+        throw new Error('No active AI service instance available. Please start a Spot Instance.')
+      }
+      
       logger.info(`Calling AI service for job ${jobData.jobId}`, { aiServiceUrl })
       
       const response = await axios.post(`${aiServiceUrl}/generate`, {

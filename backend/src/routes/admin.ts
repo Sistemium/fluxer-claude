@@ -4,26 +4,43 @@ import { SpotInstanceService } from '../services/spotInstanceService.js'
 import { SQSQueueService } from '../services/sqsQueueService.js'
 import { AutoScalerService } from '../services/autoScalerService.js'
 import logger from '../utils/logger.js'
+import { verifySession } from 'supertokens-node/recipe/session/framework/koa/index.js'
 
 const router = new Router()
 
 // Admin middleware - check if user has admin rights
 async function requireAdmin(ctx: Context, next: () => Promise<void>) {
-  // For now, simple check - in production, implement proper role-based auth
-  const userId = ctx.state.userId
-  const adminUsers = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean)
-  
-  if (!adminUsers.includes(userId)) {
-    ctx.status = 403
-    ctx.body = { error: 'Admin access required' }
-    return
+  try {
+    // Get user ID from SuperTokens session
+    const session = ctx.session
+    if (!session) {
+      ctx.status = 401
+      ctx.body = { error: 'Authentication required' }
+      return
+    }
+    
+    const userId = session.getUserId()
+    const adminUsers = (process.env.ADMIN_USER_IDS || '').split(',').filter(Boolean)
+    
+    if (!adminUsers.includes(userId)) {
+      ctx.status = 403
+      ctx.body = { error: 'Admin access required' }
+      return
+    }
+    
+    // Store userId in context for use in handlers
+    ctx.state.userId = userId
+    
+    await next()
+  } catch (error) {
+    logger.error('Admin middleware error:', error)
+    ctx.status = 401
+    ctx.body = { error: 'Invalid session' }
   }
-  
-  await next()
 }
 
 // Get spot instance status
-router.get('/spot/status', requireAdmin, async (ctx: Context) => {
+router.get('/spot/status', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const spotService = SpotInstanceService.getInstance()
     const instances = await spotService.getAllActiveInstances()
@@ -54,7 +71,7 @@ router.get('/spot/status', requireAdmin, async (ctx: Context) => {
 })
 
 // Launch new spot instance
-router.post('/spot/launch', requireAdmin, async (ctx: Context) => {
+router.post('/spot/launch', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const spotService = SpotInstanceService.getInstance()
     
@@ -89,7 +106,7 @@ router.post('/spot/launch', requireAdmin, async (ctx: Context) => {
 })
 
 // Terminate spot instance
-router.post('/spot/terminate', requireAdmin, async (ctx: Context) => {
+router.post('/spot/terminate', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const { instanceId } = ctx.request.body as { instanceId: string }
     
@@ -121,7 +138,7 @@ router.post('/spot/terminate', requireAdmin, async (ctx: Context) => {
 })
 
 // Check AI service health on specific instance
-router.get('/ai/health/:instanceId', requireAdmin, async (ctx: Context) => {
+router.get('/ai/health/:instanceId', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const { instanceId } = ctx.params
     const spotService = SpotInstanceService.getInstance()
@@ -144,7 +161,7 @@ router.get('/ai/health/:instanceId', requireAdmin, async (ctx: Context) => {
 })
 
 // Get queue statistics
-router.get('/queue/stats', requireAdmin, async (ctx: Context) => {
+router.get('/queue/stats', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const queueService = SQSQueueService.getInstance()
     const stats = await queueService.getQueueStats()
@@ -161,7 +178,7 @@ router.get('/queue/stats', requireAdmin, async (ctx: Context) => {
 })
 
 // Auto-scaling logic - launch instance based on queue depth
-router.post('/spot/auto-scale', requireAdmin, async (ctx: Context) => {
+router.post('/spot/auto-scale', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const spotService = SpotInstanceService.getInstance()
     const queueService = SQSQueueService.getInstance()
@@ -209,7 +226,7 @@ router.post('/spot/auto-scale', requireAdmin, async (ctx: Context) => {
 // Auto-scaler management endpoints
 
 // Get auto-scaler status
-router.get('/autoscaler/status', requireAdmin, async (ctx: Context) => {
+router.get('/autoscaler/status', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const autoScaler = AutoScalerService.getInstance()
     const status = autoScaler.getStatus()
@@ -223,7 +240,7 @@ router.get('/autoscaler/status', requireAdmin, async (ctx: Context) => {
 })
 
 // Start auto-scaler
-router.post('/autoscaler/start', requireAdmin, async (ctx: Context) => {
+router.post('/autoscaler/start', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const autoScaler = AutoScalerService.getInstance()
     autoScaler.start()
@@ -242,7 +259,7 @@ router.post('/autoscaler/start', requireAdmin, async (ctx: Context) => {
 })
 
 // Stop auto-scaler
-router.post('/autoscaler/stop', requireAdmin, async (ctx: Context) => {
+router.post('/autoscaler/stop', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const autoScaler = AutoScalerService.getInstance()
     autoScaler.stop()
@@ -261,7 +278,7 @@ router.post('/autoscaler/stop', requireAdmin, async (ctx: Context) => {
 })
 
 // Force scale up
-router.post('/autoscaler/scale-up', requireAdmin, async (ctx: Context) => {
+router.post('/autoscaler/scale-up', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const autoScaler = AutoScalerService.getInstance()
     const instance = await autoScaler.forceScaleUp()
@@ -287,7 +304,7 @@ router.post('/autoscaler/scale-up', requireAdmin, async (ctx: Context) => {
 })
 
 // Force scale down
-router.post('/autoscaler/scale-down', requireAdmin, async (ctx: Context) => {
+router.post('/autoscaler/scale-down', verifySession(), requireAdmin, async (ctx: Context) => {
   try {
     const autoScaler = AutoScalerService.getInstance()
     await autoScaler.forceScaleDown()

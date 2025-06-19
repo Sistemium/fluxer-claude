@@ -34,6 +34,12 @@ const router = createRouter({
       name: 'gallery',
       component: () => import('@/views/GalleryView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('@/views/AdminView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
     }
   ]
 })
@@ -54,6 +60,11 @@ router.beforeEach(async (to) => {
 
   // Redirect to home if authenticated and trying to access auth page
   if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    return '/'
+  }
+
+  // Check admin access for admin routes
+  if (to.meta.requiresAdmin && !authStore.isAdmin) {
     return '/'
   }
 })

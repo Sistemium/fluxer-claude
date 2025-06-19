@@ -15,6 +15,7 @@ import { SocketService } from './services/socketService.js'
 import { AutoScalerService } from './services/autoScalerService.js'
 import { EventBridgeService } from './services/eventBridgeService.js'
 import { MqttService } from './services/mqttService.js'
+import { SpotInstanceService } from './services/spotInstanceService.js'
 // import { GenerateService } from './services/generateService.js'
 
 const app = new Koa()
@@ -82,6 +83,11 @@ async function startServer() {
     const eventBridge = EventBridgeService.getInstance()
     await eventBridge.ensureEventBusExists()
     logger.info('EventBridge service initialized')
+
+    // Initialize SpotInstanceService and load existing instances
+    const spotInstanceService = SpotInstanceService.getInstance()
+    await spotInstanceService.initialize()
+    logger.info('SpotInstanceService initialized')
 
     // Initialize and start AutoScaler
     const autoScaler = AutoScalerService.getInstance()

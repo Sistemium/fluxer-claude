@@ -11,6 +11,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => isAuthenticated.value)
   const userId = computed(() => user.value?.id)
+  
+  // Check if user is admin (for now, simple check against env var)
+  const isAdmin = computed(() => {
+    if (!user.value?.id) return false
+    const adminIds = import.meta.env.VITE_ADMIN_USER_IDS?.split(',') || []
+    return adminIds.includes(user.value.id)
+  })
 
   async function checkSession() {
     try {
@@ -119,6 +126,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     userId,
     isLoggedIn,
+    isAdmin,
     checkSession,
     signIn,
     signUp,
