@@ -2,8 +2,6 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import torch
-import redis
-import json
 import logging
 import os
 import requests

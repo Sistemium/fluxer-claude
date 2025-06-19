@@ -203,183 +203,135 @@ export class SpotInstanceService {
   }
 
   private generateUserData(): string {
-    // Base64 encoded startup script for AI service
+    // Minimal startup script - code from Git, models from snapshot/ephemeral disk
     const script = `#!/bin/bash
 set -e
 
-# Update system
+# Update system and install essentials
 apt-get update -y
+apt-get install -y git curl python3 python3-pip awscli
 
-# Install Docker if not present
-if ! command -v docker &> /dev/null; then
-    apt-get install -y docker.io
-    systemctl start docker
-    systemctl enable docker
-    usermod -a -G docker ubuntu
+# Find CUDA libraries (AMI already has NVIDIA drivers)
+CUDA_FILE=$(find /usr -name "libcudart.so*" 2>/dev/null | head -n1)
+if [ -n "$CUDA_FILE" ]; then
+    CUDA_LIB_PATH=$(dirname "$CUDA_FILE")
+else
+    CUDA_LIB_PATH="/usr/lib/x86_64-linux-gnu"
+fi
+echo "Found CUDA libraries at: $CUDA_LIB_PATH"
+
+# Also check common NVIDIA library paths
+for path in /usr/lib/x86_64-linux-gnu /usr/local/cuda*/lib64 /opt/nvidia/lib64; do
+    if [ -f "$path/libcudart.so" ]; then
+        CUDA_LIB_PATH="$path:$CUDA_LIB_PATH"
+        echo "Added CUDA path: $path"
+    fi
+done
+
+# Get HuggingFace token from AWS Secrets Manager
+SPOT_REGION="${process.env.SPOT_AWS_REGION || 'eu-west-1'}"
+HF_TOKEN=""
+if aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$SPOT_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
+    HF_TOKEN=$(cat /tmp/hf_token.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")
+    rm -f /tmp/hf_token.json
 fi
 
-# Install git if not present
-apt-get install -y git curl
+# Setup instance store for ML models (229GB free ephemeral storage)
+# Find instance store device
+INSTANCE_STORE=""
+for device in /dev/nvme2n1 /dev/nvme3n1 /dev/xvdb /dev/sdb /dev/nvme1n1; do
+    if [ -b "$device" ]; then
+        INSTANCE_STORE="$device"
+        echo "Found instance store at: $device"
+        break
+    fi
+done
 
-# Set up environment variables
-cat << 'EOF' > /opt/ai-service.env
-AWS_REGION=${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}
-BACKEND_URL=${process.env.BACKEND_URL || 'http://localhost:3000'}
-MODEL_CACHE_S3_BUCKET=${process.env.MODEL_CACHE_S3_BUCKET || ''}
-SQS_QUEUE_URL=${process.env.SQS_QUEUE_URL || ''}
-EVENTBRIDGE_BUS_NAME=${process.env.EVENTBRIDGE_BUS_NAME || 'fluxer-ai-events'}
-MQTT_BROKER_HOST=${process.env.MQTT_BROKER_HOST || ''}
-MQTT_BROKER_PORT=${process.env.MQTT_BROKER_PORT || '1883'}
-MQTT_USERNAME=${process.env.MQTT_USERNAME || ''}
-MQTT_PASSWORD=${process.env.MQTT_PASSWORD || ''}
-AWS_ACCESS_KEY_ID=${process.env.AWS_ACCESS_KEY_ID || ''}
-AWS_SECRET_ACCESS_KEY=${process.env.AWS_SECRET_ACCESS_KEY || ''}
-MODEL_NAME=flux-dev
-CUDA_VISIBLE_DEVICES=0
-EOF
+if [ -n "$INSTANCE_STORE" ]; then
+    mkdir -p /mnt/instance-store
+    mount "$INSTANCE_STORE" /mnt/instance-store 2>/dev/null || {
+        echo "Formatting instance store..."
+        mkfs.ext4 "$INSTANCE_STORE"
+        mount "$INSTANCE_STORE" /mnt/instance-store
+    }
+    
+    # Create ML directories with proper permissions
+    mkdir -p /mnt/instance-store/python
+    mkdir -p /mnt/instance-store/huggingface  
+    mkdir -p /mnt/instance-store/torch-cache
+    mkdir -p /mnt/instance-store/pip-cache
+    
+    # Set ownership before pip install
+    chown -R ubuntu:ubuntu /mnt/instance-store
+    chmod -R 755 /mnt/instance-store
+    
+    echo "Instance store mounted - 229GB available, installing Python deps as ubuntu user..."
+    
+    # Set temp directory to instance store to avoid filling up root disk
+    mkdir -p /mnt/instance-store/tmp
+    chown ubuntu:ubuntu /mnt/instance-store/tmp
+    
+    # Install Python packages in stages to handle dependencies
+    echo "Step 1: Installing torch first..."
+    sudo -u ubuntu TMPDIR=/mnt/instance-store/tmp \
+        PIP_BUILD_DIR=/mnt/instance-store/tmp/pip-build \
+        pip3 install \
+        --target /mnt/instance-store/python \
+        --cache-dir /mnt/instance-store/pip-cache \
+        --index-url https://download.pytorch.org/whl/cu118 \
+        torch torchvision
+    
+    echo "Step 2: Installing other packages..."
+    sudo -u ubuntu TMPDIR=/mnt/instance-store/tmp \
+        PIP_BUILD_DIR=/mnt/instance-store/tmp/pip-build \
+        PYTHONPATH=/mnt/instance-store/python \
+        pip3 install \
+        --target /mnt/instance-store/python \
+        --cache-dir /mnt/instance-store/pip-cache \
+        --extra-index-url https://pypi.org/simple \
+        fastapi uvicorn diffusers transformers accelerate \
+        safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
+        sentencepiece python-dotenv
+    
+    echo "Step 3: Installing xformers (needs torch in path)..."
+    sudo -u ubuntu TMPDIR=/mnt/instance-store/tmp \
+        PIP_BUILD_DIR=/mnt/instance-store/tmp/pip-build \
+        PYTHONPATH=/mnt/instance-store/python \
+        pip3 install \
+        --target /mnt/instance-store/python \
+        --cache-dir /mnt/instance-store/pip-cache \
+        --extra-index-url https://pypi.org/simple \
+        xformers || echo "xformers install failed, continuing without it"
+    
+    echo "Python dependencies installed to instance store"
+else
+    echo "Warning: Instance store not found, installing to system"
+    pip3 install fastapi uvicorn torch torchvision diffusers transformers accelerate \
+        safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
+        sentencepiece xformers
+fi
 
-# Install Python and pip for direct AI service
-apt-get install -y python3 python3-pip
-
-# Install Python dependencies for AI service
-pip3 install fastapi uvicorn torch diffusers transformers accelerate safetensors pillow requests boto3 paho-mqtt
-
-# Create simple AI service directly
-mkdir -p /opt/ai-service
+# Clone AI service code from Git
+cd /opt
+git clone https://github.com/${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}.git ai-service-repo
+cp -r ai-service-repo/ai-service /opt/ai-service || mkdir -p /opt/ai-service
 cd /opt/ai-service
 
-# Create AI service using our actual structure
-cat << 'PYTHON_EOF' > main.py
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import uvicorn
-import torch
-import os
-import json
-import logging
-from typing import Optional
-from datetime import datetime
+# Set up environment with dynamic CUDA path
+cat << EOF > /opt/ai-service.env
+AWS_REGION=${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}
+BACKEND_URL=${process.env.BACKEND_URL || 'http://localhost:3000'}
+SQS_QUEUE_URL=${process.env.SQS_QUEUE_URL || ''}
+HUGGINGFACE_TOKEN=\$HF_TOKEN
+PYTHONPATH=/mnt/instance-store/python:\$PYTHONPATH
+HUGGINGFACE_HUB_CACHE=/mnt/instance-store/huggingface
+TORCH_HOME=/mnt/instance-store/torch-cache
+CUDA_VISIBLE_DEVICES=0
+LD_LIBRARY_PATH=\$CUDA_LIB_PATH:\$LD_LIBRARY_PATH
+EOF
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),  # stdout/stderr for systemd journal
-        logging.FileHandler('/var/log/ai-service/ai-service.log', mode='a')
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Log startup
-logger.info("Starting Fluxer AI Service")
-
-app = FastAPI(
-    title="Fluxer AI Service", 
-    description="AI image generation service using FLUX",
-    version="1.0.0"
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Pydantic models
-class GenerationRequest(BaseModel):
-    user_id: str
-    job_id: str
-    prompt: str
-    width: int = 1024
-    height: int = 1024
-    guidance_scale: float = 7.5
-    num_inference_steps: int = 25
-    seed: Optional[int] = None
-
-class GenerationResponse(BaseModel):
-    job_id: str
-    status: str
-    message: str
-    image_url: Optional[str] = None
-    error: Optional[str] = None
-
-@app.get("/")
-async def root():
-    model_name = os.getenv('MODEL_NAME', 'AI model')
-    return {"message": f"Fluxer AI Service - {model_name}", "status": "running"}
-
-@app.get("/health")
-async def health_check():
-    try:
-        gpu_available = torch.cuda.is_available()
-        gpu_count = torch.cuda.device_count() if gpu_available else 0
-        
-        model_name = os.getenv('MODEL_NAME', 'AI model')
-        return {
-            "status": "healthy",
-            "gpu_available": gpu_available,
-            "gpu_count": gpu_count,
-            "model_name": model_name,
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
-
-@app.get("/ping")
-async def ping():
-    return {"status": "ok"}
-
-@app.post("/generate", response_model=GenerationResponse)
-async def generate_image(request: GenerationRequest):
-    try:
-        logger.info(f"Generating image for job {request.job_id}")
-        
-        # For now, return a placeholder response
-        # TODO: Implement actual FLUX generation
-        import base64
-        import io
-        from PIL import Image
-        
-        # Create a simple test image
-        img = Image.new('RGB', (request.width, request.height), color='blue')
-        img_buffer = io.BytesIO()
-        img.save(img_buffer, format='PNG')
-        img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
-        
-        image_url = f"data:image/png;base64,{img_base64}"
-        
-        # TODO: Send progress updates via MQTT and EventBridge
-        logger.info(f"Generated test image for job {request.job_id}")
-        
-        return GenerationResponse(
-            job_id=request.job_id,
-            status="completed",
-            message="Test image generated successfully",
-            image_url=image_url
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating image for job {request.job_id}: {e}")
-        return GenerationResponse(
-            job_id=request.job_id,
-            status="failed", 
-            message="Image generation failed",
-            error=str(e)
-        )
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-PYTHON_EOF
-
-# Create systemd service for AI service
-cat << 'SERVICE_EOF' > /etc/systemd/system/ai-service.service
+# Create systemd service with dynamic CUDA environment
+cat << EOF > /etc/systemd/system/ai-service.service
 [Unit]
 Description=Fluxer AI Service
 After=network.target
@@ -388,57 +340,22 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/opt/ai-service
-Environment=PATH=/usr/bin:/usr/local/bin
 EnvironmentFile=/opt/ai-service.env
+Environment=LD_LIBRARY_PATH=\$CUDA_LIB_PATH
 ExecStart=/usr/bin/python3 main.py
 Restart=always
 RestartSec=10
 
-# Logging configuration
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=ai-service
-
-# Security settings
-NoNewPrivileges=true
-PrivateTmp=true
-
 [Install]
 WantedBy=multi-user.target
-SERVICE_EOF
+EOF
 
-# Create log directory and set permissions
-mkdir -p /var/log/ai-service
-chown ubuntu:ubuntu /var/log/ai-service
-chmod 755 /var/log/ai-service
-
-# Start AI service
+# Start service
 systemctl daemon-reload
 systemctl enable ai-service
 systemctl start ai-service
 
-# Wait for service to start
-sleep 10
-
-# Check service status
-systemctl status ai-service || true
-
-# Signal successful startup via MQTT and EventBridge
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-echo "Instance $INSTANCE_ID startup completed, AI service is ready"
-
-# Test AI service health
-curl -f http://localhost:8000/health && echo "AI service health check passed" || echo "AI service health check failed"
-
-echo "Spot instance startup script completed"
-echo ""
-echo "=== AI Service Log Commands ==="
-echo "View service status: sudo systemctl status ai-service"
-echo "View realtime logs: sudo journalctl -u ai-service -f"
-echo "View recent logs: sudo journalctl -u ai-service --no-pager"
-echo "View log file: sudo tail -f /var/log/ai-service/ai-service.log"
-echo "Restart service: sudo systemctl restart ai-service"
-echo "============================"
+echo "AI service started from Git repo"
 `
 
     return Buffer.from(script).toString('base64')
@@ -469,12 +386,12 @@ echo "============================"
           IamInstanceProfile: {
             Name: process.env.SPOT_IAM_INSTANCE_PROFILE || 'ai-service-role'
           },
-          // Block device mapping for larger storage
+          // Block device mapping - small root disk, use instance store for ML
           BlockDeviceMappings: [
             {
-              DeviceName: '/dev/xvda',
+              DeviceName: '/dev/sda1', // Root device for AMI
               Ebs: {
-                VolumeSize: 50, // GB
+                VolumeSize: 15, // GB - just OS and basic tools 
                 VolumeType: 'gp3',
                 DeleteOnTermination: true
               }
