@@ -12,6 +12,9 @@ import { apiRoutes } from './routes/index.js'
 // import { authRoutes } from './routes/auth.js'
 import { middleware } from 'supertokens-node/framework/koa/index.js'
 import { SocketService } from './services/socketService.js'
+import { AutoScalerService } from './services/autoScalerService.js'
+import { EventBridgeService } from './services/eventBridgeService.js'
+import { MqttService } from './services/mqttService.js'
 // import { GenerateService } from './services/generateService.js'
 
 const app = new Koa()
@@ -66,6 +69,25 @@ async function startServer() {
     const socketService = SocketService.getInstance()
     const server = socketService.initialize(app)
 
+    // Initialize MQTT
+    const mqttService = MqttService.getInstance()
+    try {
+      await mqttService.connect()
+      logger.info('MQTT service initialized')
+    } catch (error) {
+      logger.warn('MQTT service failed to initialize, continuing without MQTT', error)
+    }
+
+    // Initialize EventBridge
+    const eventBridge = EventBridgeService.getInstance()
+    await eventBridge.ensureEventBusExists()
+    logger.info('EventBridge service initialized')
+
+    // Initialize and start AutoScaler
+    const autoScaler = AutoScalerService.getInstance()
+    autoScaler.start()
+    logger.info('AutoScaler service initialized')
+
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} with WebSocket support`)
     })
@@ -77,6 +99,15 @@ async function startServer() {
 
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully')
+  
+  // Stop MQTT
+  const mqttService = MqttService.getInstance()
+  mqttService.disconnect()
+  
+  // Stop AutoScaler
+  const autoScaler = AutoScalerService.getInstance()
+  autoScaler.stop()
+  
   await mongoose.disconnect()
   process.exit(0)
 })

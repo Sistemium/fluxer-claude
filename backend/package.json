@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.830.0",
+    "@aws-sdk/client-eventbridge": "^3.830.0",
     "@aws-sdk/client-sqs": "^3.831.0",
     "@koa/cors": "^5.0.0",
     "@koa/multer": "^3.0.2",
@@ -31,6 +32,7 @@
     "koa-cors": "^0.0.16",
     "koa-router": "^12.0.1",
     "mongoose": "^8.0.3",
+    "mqtt": "^5.13.1",
     "socket.io": "^4.8.1",
     "supertokens-node": "^18.0.3",
     "uuid": "^11.1.0",
@@ -44,6 +46,7 @@
     "@types/koa-bodyparser": "^4.3.12",
     "@types/koa-cors": "^0.0.5",
     "@types/koa-router": "^7.4.8",
+    "@types/mqtt": "^0.0.34",
     "@types/node": "^20.9.0",
     "@typescript-eslint/eslint-plugin": "^6.11.0",
     "@typescript-eslint/parser": "^6.11.0",
