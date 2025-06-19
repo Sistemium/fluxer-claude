@@ -24,6 +24,20 @@ jest.mock('../services/socketService.js', () => ({
   },
 }))
 
+// Mock Image model to avoid MongoDB connection
+jest.mock('../models/Image.js', () => {
+  const mockImageSave = jest.fn().mockResolvedValue({})
+  const MockImage = jest.fn().mockImplementation(() => ({
+    save: mockImageSave,
+    _id: 'mock-image-id',
+    status: 'generating',
+    imageUrl: null,
+  }))
+  MockImage.findOne = jest.fn()
+  MockImage.mockImageSave = mockImageSave
+  return { Image: MockImage }
+})
+
 describe('SQSQueueService', () => {
   let sqsService: SQSQueueService
   let mockSQS: any
@@ -45,12 +59,18 @@ describe('SQSQueueService', () => {
     AWSMock.mock('SQS', 'deleteMessage', mockSQS.deleteMessage)
     AWSMock.mock('SQS', 'getQueueAttributes', mockSQS.getQueueAttributes)
 
+    // Clear all mocks
+    jest.clearAllMocks()
+    const { Image } = require('../models/Image.js')
+    Image.mockClear?.()
+    Image.findOne?.mockClear?.()
+    Image.mockImageSave?.mockClear?.()
+
     sqsService = new SQSQueueService()
   })
 
   afterEach(() => {
     AWSMock.restore('SQS')
-    jest.clearAllMocks()
   })
 
   describe('addJob', () => {
@@ -76,6 +96,9 @@ describe('SQSQueueService', () => {
       expect(jobId).toBeDefined()
       expect(typeof jobId).toBe('string')
       expect(mockSQS.sendMessage).toHaveBeenCalledTimes(1)
+      const { Image } = require('../models/Image.js')
+      expect(Image).toHaveBeenCalledTimes(1)
+      expect(Image.mockImageSave).toHaveBeenCalledTimes(1)
       
       const sentParams = mockSQS.sendMessage.mock.calls[0][0]
       expect(sentParams.QueueUrl).toBe(process.env.SQS_QUEUE_URL)
@@ -124,14 +147,17 @@ describe('SQSQueueService', () => {
         messagesInFlight: 2,
         messagesDelayed: 0,
       })
-      expect(mockSQS.getQueueAttributes).toHaveBeenCalledWith({
-        QueueUrl: process.env.SQS_QUEUE_URL,
-        AttributeNames: [
-          'ApproximateNumberOfMessages',
-          'ApproximateNumberOfMessagesNotVisible',
-          'ApproximateNumberOfMessagesDelayed',
-        ],
-      })
+      expect(mockSQS.getQueueAttributes).toHaveBeenCalledWith(
+        {
+          QueueUrl: process.env.SQS_QUEUE_URL,
+          AttributeNames: [
+            'ApproximateNumberOfMessages',
+            'ApproximateNumberOfMessagesNotVisible',
+            'ApproximateNumberOfMessagesDelayed',
+          ],
+        },
+        expect.any(Function)
+      )
     })
 
     it('should handle errors when getting queue stats', async () => {
@@ -155,6 +181,15 @@ describe('SQSQueueService', () => {
           image_url: 'data:image/png;base64,test-image-data',
         },
       })
+
+      // Mock finding the image in database
+      const mockImageInstance = {
+        save: jest.fn().mockResolvedValue({}),
+        imageUrl: null,
+        status: 'generating',
+      }
+      const { Image } = require('../models/Image.js')
+      Image.findOne.mockResolvedValue(mockImageInstance)
 
       const mockMessage = {
         MessageId: 'test-message-id',
@@ -190,10 +225,13 @@ describe('SQSQueueService', () => {
         })
       )
 
-      expect(mockSQS.deleteMessage).toHaveBeenCalledWith({
-        QueueUrl: process.env.SQS_QUEUE_URL,
-        ReceiptHandle: 'test-receipt-handle',
-      })
+      expect(mockSQS.deleteMessage).toHaveBeenCalledWith(
+        {
+          QueueUrl: process.env.SQS_QUEUE_URL,
+          ReceiptHandle: 'test-receipt-handle',
+        },
+        expect.any(Function)
+      )
     })
 
     it('should handle malformed message body', async () => {
@@ -211,10 +249,58 @@ describe('SQSQueueService', () => {
       await processMessageMethod(mockMessage)
 
       // Should delete malformed message
-      expect(mockSQS.deleteMessage).toHaveBeenCalledWith({
-        QueueUrl: process.env.SQS_QUEUE_URL,
-        ReceiptHandle: 'test-receipt-handle',
+      expect(mockSQS.deleteMessage).toHaveBeenCalledWith(
+        {
+          QueueUrl: process.env.SQS_QUEUE_URL,
+          ReceiptHandle: 'test-receipt-handle',
+        },
+        expect.any(Function)
+      )
+    })
+  })
+
+  describe('getJobStatus', () => {
+    it('should return job status from MongoDB', async () => {
+      const mockImage = {
+        _id: 'mock-image-id',
+        jobId: 'test-job-id',
+        status: 'completed',
+        imageUrl: 'data:image/png;base64,test',
+        prompt: 'test prompt',
+        createdAt: new Date(),
+      }
+
+      const { Image } = require('../models/Image.js')
+      Image.findOne.mockResolvedValue(mockImage)
+
+      const result = await sqsService.getJobStatus('test-job-id', 'test-user-id')
+
+      expect(result).toEqual({
+        jobId: 'test-job-id',
+        status: 'completed',
+        progress: 100,
+        image: {
+          id: 'mock-image-id',
+          imageUrl: 'data:image/png;base64,test',
+          prompt: 'test prompt',
+          createdAt: mockImage.createdAt,
+        },
+        error: null,
       })
+
+      expect(Image.findOne).toHaveBeenCalledWith({
+        jobId: 'test-job-id',
+        userId: 'test-user-id',
+      })
+    })
+
+    it('should return null when job not found', async () => {
+      const { Image } = require('../models/Image.js')
+      Image.findOne.mockResolvedValue(null)
+
+      const result = await sqsService.getJobStatus('non-existent-job', 'test-user-id')
+
+      expect(result).toBeNull()
     })
   })
 
