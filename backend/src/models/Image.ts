@@ -36,6 +36,5 @@ const ImageSchema = new Schema<IImage>({
 
 // Index for efficient queries
 ImageSchema.index({ userId: 1, createdAt: -1 })
-ImageSchema.index({ jobId: 1 })
 
 export const Image = mongoose.model<IImage>('Image', ImageSchema)

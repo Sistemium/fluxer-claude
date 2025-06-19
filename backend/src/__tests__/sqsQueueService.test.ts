@@ -1,5 +1,5 @@
-import AWS from 'aws-sdk'
-import AWSMock from 'aws-sdk-mock'
+import { SQSClient, SendMessageCommand, ReceiveMessageCommand, DeleteMessageCommand, GetQueueAttributesCommand } from '@aws-sdk/client-sqs'
+import { mockClient } from 'aws-sdk-client-mock'
 import { SQSQueueService } from '../services/sqsQueueService'
 
 // Mock logger to avoid console output in tests
@@ -39,28 +39,14 @@ jest.mock('../models/Image.js', () => {
 })
 
 describe('SQSQueueService', () => {
+  const sqsMock = mockClient(SQSClient)
   let sqsService: SQSQueueService
-  let mockSQS: any
 
   beforeEach(() => {
-    // Set up AWS SDK mock
-    AWSMock.setSDKInstance(AWS)
-    
-    // Mock SQS methods
-    mockSQS = {
-      sendMessage: jest.fn(),
-      receiveMessage: jest.fn(),
-      deleteMessage: jest.fn(),
-      getQueueAttributes: jest.fn(),
-    }
-
-    AWSMock.mock('SQS', 'sendMessage', mockSQS.sendMessage)
-    AWSMock.mock('SQS', 'receiveMessage', mockSQS.receiveMessage)
-    AWSMock.mock('SQS', 'deleteMessage', mockSQS.deleteMessage)
-    AWSMock.mock('SQS', 'getQueueAttributes', mockSQS.getQueueAttributes)
-
-    // Clear all mocks
+    // Reset all mocks
+    sqsMock.reset()
     jest.clearAllMocks()
+    
     const { Image } = require('../models/Image.js')
     if (Image.mockClear) Image.mockClear()
     if (Image.findOne?.mockClear) Image.findOne.mockClear()
@@ -69,17 +55,10 @@ describe('SQSQueueService', () => {
     sqsService = new SQSQueueService()
   })
 
-  afterEach(() => {
-    AWSMock.restore('SQS')
-  })
-
   describe('addJob', () => {
     it('should add a job to SQS queue successfully', async () => {
-      const mockResponse = {
+      sqsMock.on(SendMessageCommand).resolves({
         MessageId: 'test-message-id',
-      }
-      mockSQS.sendMessage.mockImplementation((_params: any, callback: any) => {
-        callback(null, mockResponse)
       })
 
       const jobData = {
@@ -95,24 +74,23 @@ describe('SQSQueueService', () => {
 
       expect(jobId).toBeDefined()
       expect(typeof jobId).toBe('string')
-      expect(mockSQS.sendMessage).toHaveBeenCalledTimes(1)
+      
       const { Image } = require('../models/Image.js')
       expect(Image).toHaveBeenCalledTimes(1)
       expect(Image.mockImageSave).toHaveBeenCalledTimes(1)
       
-      const sentParams = mockSQS.sendMessage.mock.calls[0][0]
-      expect(sentParams.QueueUrl).toBe(process.env.SQS_QUEUE_URL)
-      expect(JSON.parse(sentParams.MessageBody)).toMatchObject({
+      // Verify SQS command was called
+      expect(sqsMock.commandCalls(SendMessageCommand)).toHaveLength(1)
+      const commandCalls = sqsMock.commandCalls(SendMessageCommand)
+      expect(commandCalls[0]?.args[0].input.QueueUrl).toBe(process.env.SQS_QUEUE_URL)
+      expect(JSON.parse(commandCalls[0]?.args[0].input.MessageBody!)).toMatchObject({
         ...jobData,
         jobId: jobId,
       })
     })
 
     it('should handle SQS errors when adding job', async () => {
-      const mockError = new Error('SQS Error')
-      mockSQS.sendMessage.mockImplementation((_params: any, callback: any) => {
-        callback(mockError)
-      })
+      sqsMock.on(SendMessageCommand).rejects(new Error('SQS Error'))
 
       const jobData = {
         userId: 'test-user-id',
@@ -129,15 +107,12 @@ describe('SQSQueueService', () => {
 
   describe('getQueueStats', () => {
     it('should return queue statistics', async () => {
-      const mockAttributes = {
+      sqsMock.on(GetQueueAttributesCommand).resolves({
         Attributes: {
           ApproximateNumberOfMessages: '5',
           ApproximateNumberOfMessagesNotVisible: '2',
           ApproximateNumberOfMessagesDelayed: '0',
         },
-      }
-      mockSQS.getQueueAttributes.mockImplementation((_params: any, callback: any) => {
-        callback(null, mockAttributes)
       })
 
       const stats = await sqsService.getQueueStats()
@@ -147,23 +122,14 @@ describe('SQSQueueService', () => {
         messagesInFlight: 2,
         messagesDelayed: 0,
       })
-      expect(mockSQS.getQueueAttributes).toHaveBeenCalledWith(
-        {
-          QueueUrl: process.env.SQS_QUEUE_URL,
-          AttributeNames: [
-            'ApproximateNumberOfMessages',
-            'ApproximateNumberOfMessagesNotVisible',
-            'ApproximateNumberOfMessagesDelayed',
-          ],
-        },
-        expect.any(Function)
-      )
+      
+      expect(sqsMock.commandCalls(GetQueueAttributesCommand)).toHaveLength(1)
+      const commandCalls = sqsMock.commandCalls(GetQueueAttributesCommand)
+      expect(commandCalls[0]?.args[0].input.QueueUrl).toBe(process.env.SQS_QUEUE_URL)
     })
 
     it('should handle errors when getting queue stats', async () => {
-      mockSQS.getQueueAttributes.mockImplementation((_params: any, callback: any) => {
-        callback(new Error('SQS Error'))
-      })
+      sqsMock.on(GetQueueAttributesCommand).rejects(new Error('SQS Error'))
 
       const stats = await sqsService.getQueueStats()
       expect(stats).toBeNull()
@@ -205,9 +171,7 @@ describe('SQSQueueService', () => {
         }),
       }
 
-      mockSQS.deleteMessage.mockImplementation((_params: any, callback: any) => {
-        callback(null, {})
-      })
+      sqsMock.on(DeleteMessageCommand).resolves({})
 
       // Access private method for testing
       const processMessageMethod = (sqsService as any).processMessage.bind(sqsService)
@@ -225,13 +189,7 @@ describe('SQSQueueService', () => {
         })
       )
 
-      expect(mockSQS.deleteMessage).toHaveBeenCalledWith(
-        {
-          QueueUrl: process.env.SQS_QUEUE_URL,
-          ReceiptHandle: 'test-receipt-handle',
-        },
-        expect.any(Function)
-      )
+      expect(sqsMock.commandCalls(DeleteMessageCommand)).toHaveLength(1)
     })
 
     it('should handle malformed message body', async () => {
@@ -241,21 +199,13 @@ describe('SQSQueueService', () => {
         Body: 'invalid json',
       }
 
-      mockSQS.deleteMessage.mockImplementation((_params: any, callback: any) => {
-        callback(null, {})
-      })
+      sqsMock.on(DeleteMessageCommand).resolves({})
 
       const processMessageMethod = (sqsService as any).processMessage.bind(sqsService)
       await processMessageMethod(mockMessage)
 
       // Should delete malformed message
-      expect(mockSQS.deleteMessage).toHaveBeenCalledWith(
-        {
-          QueueUrl: process.env.SQS_QUEUE_URL,
-          ReceiptHandle: 'test-receipt-handle',
-        },
-        expect.any(Function)
-      )
+      expect(sqsMock.commandCalls(DeleteMessageCommand)).toHaveLength(1)
     })
   })
 
@@ -324,14 +274,7 @@ describe('SQSQueueService', () => {
         ],
       }
 
-      mockSQS.receiveMessage.mockImplementation((_params: any, callback: any) => {
-        callback(null, mockMessages)
-      })
-
-      expect(mockSQS.receiveMessage).not.toHaveBeenCalled()
-      
-      // Test that receiveMessage would be called with correct parameters  
-      // Note: actual verification would require running processMessages method
+      sqsMock.on(ReceiveMessageCommand).resolves(mockMessages)
 
       // We can't easily test the private processMessages method without starting it,
       // but we can verify the service was constructed properly

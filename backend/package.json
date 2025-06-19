@@ -16,10 +16,11 @@
     "test:integration": "INTEGRATION_TEST=true jest --testPathPattern=integration"
   },
   "dependencies": {
+    "@aws-sdk/client-ec2": "^3.830.0",
+    "@aws-sdk/client-sqs": "^3.831.0",
     "@koa/cors": "^5.0.0",
     "@koa/multer": "^3.0.2",
     "@types/uuid": "^10.0.0",
-    "aws-sdk": "^2.1692.0",
     "axios": "^1.6.0",
     "bull": "^4.12.2",
     "dotenv-flow": "^4.1.0",
@@ -46,7 +47,7 @@
     "@types/node": "^20.9.0",
     "@typescript-eslint/eslint-plugin": "^6.11.0",
     "@typescript-eslint/parser": "^6.11.0",
-    "aws-sdk-mock": "^6.2.1",
+    "aws-sdk-client-mock": "^4.1.0",
     "eslint": "^8.53.0",
     "jest": "^30.0.1",
     "prettier": "^3.0.3",

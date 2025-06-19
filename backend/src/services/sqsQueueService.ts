@@ -1,4 +1,5 @@
-import AWS from 'aws-sdk'
+import { SQSClient, SendMessageCommand, ReceiveMessageCommand, DeleteMessageCommand, GetQueueAttributesCommand } from '@aws-sdk/client-sqs'
+import type { Message } from '@aws-sdk/client-sqs'
 import { Image } from '../models/Image.js'
 import logger from '../utils/logger.js'
 import axios from 'axios'
@@ -18,16 +19,18 @@ interface GenerationJobData {
 
 export class SQSQueueService {
   private static instance: SQSQueueService
-  private sqs: AWS.SQS
+  private sqs: SQSClient
   private queueUrl: string
   private isProcessing = false
 
   constructor() {
-    // Configure AWS SQS
-    this.sqs = new AWS.SQS({
+    // Configure AWS SQS v3
+    this.sqs = new SQSClient({
       region: process.env.AWS_REGION || 'eu-north-1',
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID as string,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY as string
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID as string,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY as string,
+      },
     })
     
     this.queueUrl = process.env.SQS_QUEUE_URL || ''
@@ -71,7 +74,8 @@ export class SQSQueueService {
         }
       }
       
-      const result = await this.sqs.sendMessage(params).promise()
+      const command = new SendMessageCommand(params)
+      const result = await this.sqs.send(command)
       
       // Create image record in database
       const image = new Image({
@@ -115,13 +119,14 @@ export class SQSQueueService {
   private async processMessages() {
     while (this.isProcessing) {
       try {
-        const messages = await this.sqs.receiveMessage({
+        const command = new ReceiveMessageCommand({
           QueueUrl: this.queueUrl,
           MaxNumberOfMessages: 1,
           VisibilityTimeout: 900, // 15 minutes for image generation
           WaitTimeSeconds: 20, // Long polling
           MessageAttributeNames: ['All']
-        }).promise()
+        })
+        const messages = await this.sqs.send(command)
         
         if (messages.Messages && messages.Messages.length > 0) {
           for (const message of messages.Messages) {
@@ -136,7 +141,7 @@ export class SQSQueueService {
     }
   }
 
-  private async processMessage(message: AWS.SQS.Message) {
+  private async processMessage(message: Message) {
     let jobData: GenerationJobData
     
     try {
@@ -228,12 +233,13 @@ export class SQSQueueService {
     }
   }
 
-  private async deleteMessage(message: AWS.SQS.Message) {
+  private async deleteMessage(message: Message) {
     try {
-      await this.sqs.deleteMessage({
+      const command = new DeleteMessageCommand({
         QueueUrl: this.queueUrl,
         ReceiptHandle: message.ReceiptHandle!
-      }).promise()
+      })
+      await this.sqs.send(command)
     } catch (error) {
       logger.error('Error deleting SQS message', error)
     }
@@ -241,14 +247,15 @@ export class SQSQueueService {
 
   async getQueueStats() {
     try {
-      const attributes = await this.sqs.getQueueAttributes({
+      const command = new GetQueueAttributesCommand({
         QueueUrl: this.queueUrl,
         AttributeNames: [
           'ApproximateNumberOfMessages',
           'ApproximateNumberOfMessagesNotVisible',
           'ApproximateNumberOfMessagesDelayed'
         ]
-      }).promise()
+      })
+      const attributes = await this.sqs.send(command)
       
       return {
         messagesAvailable: parseInt(attributes.Attributes?.ApproximateNumberOfMessages || '0'),
