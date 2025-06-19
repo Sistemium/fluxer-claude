@@ -34,7 +34,6 @@ Thumbs.db
 
 # AI Models and Cache
 .cache/
-models/
 *.safetensors
 *.bin
 
