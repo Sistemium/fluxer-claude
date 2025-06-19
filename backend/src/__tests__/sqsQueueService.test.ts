@@ -32,7 +32,7 @@ jest.mock('../models/Image.js', () => {
     _id: 'mock-image-id',
     status: 'generating',
     imageUrl: null,
-  }))
+  })) as any
   MockImage.findOne = jest.fn()
   MockImage.mockImageSave = mockImageSave
   return { Image: MockImage }
@@ -62,9 +62,9 @@ describe('SQSQueueService', () => {
     // Clear all mocks
     jest.clearAllMocks()
     const { Image } = require('../models/Image.js')
-    Image.mockClear?.()
-    Image.findOne?.mockClear?.()
-    Image.mockImageSave?.mockClear?.()
+    if (Image.mockClear) Image.mockClear()
+    if (Image.findOne?.mockClear) Image.findOne.mockClear()
+    if (Image.mockImageSave?.mockClear) Image.mockImageSave.mockClear()
 
     sqsService = new SQSQueueService()
   })
