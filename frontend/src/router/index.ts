@@ -23,6 +23,13 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/generate/:jobId',
+      name: 'generate-with-job',
+      component: () => import('@/views/GenerateView.vue'),
+      meta: { requiresAuth: true },
+      props: true
+    },
+    {
       path: '/gallery',
       name: 'gallery',
       component: () => import('@/views/GalleryView.vue'),

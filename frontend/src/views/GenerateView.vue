@@ -107,6 +107,12 @@
                 </template>
               </v-progress-circular>
               <p class="mt-4">{{ imagesStore.generationMessage || 'Generating your image...' }}</p>
+              
+              <!-- Show job ID for reference -->
+              <p v-if="imagesStore.currentJobId" class="text-caption text-grey mt-2">
+                Job ID: {{ imagesStore.currentJobId }}
+              </p>
+              
               <v-progress-linear
                 :model-value="imagesStore.generationProgress"
                 color="primary"
@@ -114,6 +120,19 @@
                 rounded
                 class="mt-4"
               ></v-progress-linear>
+              
+              <!-- Show restoration notice if this is a restored session -->
+              <v-alert
+                v-if="isRestoredSession"
+                type="info"
+                variant="tonal"
+                class="mt-4"
+                density="compact"
+                closable
+              >
+                <v-icon start>mdi-restore</v-icon>
+                Session restored! Your generation will continue.
+              </v-alert>
             </div>
             <div v-else class="text-center text-grey">
               <v-icon size="64" color="grey-lighten-1">mdi-image-outline</v-icon>
@@ -127,9 +146,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useImagesStore } from '@/stores/images'
 
+// Props for jobId when coming from URL
+const props = defineProps<{
+  jobId?: string
+}>()
+
+const route = useRoute()
+const router = useRouter()
 const imagesStore = useImagesStore()
 
 const prompt = ref('')
@@ -138,6 +165,7 @@ const height = ref(512)
 const guidance_scale = ref(7.5)
 const num_inference_steps = ref(50)
 const generatedImage = ref<string | null>(null)
+const isRestoredSession = ref(false)
 
 const dimensions = [256, 512, 768, 1024]
 
@@ -160,4 +188,47 @@ async function generateImage () {
     console.error('Error generating image:', error)
   }
 }
+
+// Restore state if jobId is provided in URL
+onMounted(async () => {
+  // Set navigation callback for the store
+  imagesStore.setNavigationCallback((path: string) => {
+    router.push(path)
+  })
+  
+  const jobIdFromRoute = props.jobId || route.params.jobId as string
+  
+  if (jobIdFromRoute) {
+    console.log('Restoring generation state for jobId:', jobIdFromRoute)
+    isRestoredSession.value = true
+    
+    try {
+      const result = await imagesStore.restoreGenerationState(jobIdFromRoute)
+      
+      if (result) {
+        // Show the completed image
+        generatedImage.value = result.imageUrl
+        
+        // Show success message
+        console.log('Generation state restored successfully')
+        
+        // Redirect to clean generate URL after showing result
+        setTimeout(() => {
+          router.push('/generate')
+        }, 5000)
+      } else {
+        // Job not found or failed, redirect to generate page
+        console.log('Failed to restore state, redirecting to generate')
+        setTimeout(() => {
+          router.push('/generate')
+        }, 1000)
+      }
+    } catch (error) {
+      console.error('Error restoring generation state:', error)
+      setTimeout(() => {
+        router.push('/generate')
+      }, 1000)
+    }
+  }
+})
 </script>
