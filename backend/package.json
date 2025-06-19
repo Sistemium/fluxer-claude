@@ -9,11 +9,17 @@
     "worker": "node -r dotenv-flow/config dist/worker.js",
     "dev:worker": "tsc-watch --onSuccess \"npm run worker\"",
     "lint": "eslint src --ext .ts --fix",
-    "format": "prettier --write src/"
+    "format": "prettier --write src/",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:integration": "INTEGRATION_TEST=true jest --testPathPattern=integration"
   },
   "dependencies": {
     "@koa/cors": "^5.0.0",
     "@koa/multer": "^3.0.2",
+    "@types/uuid": "^10.0.0",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.6.0",
     "bull": "^4.12.2",
     "dotenv-flow": "^4.1.0",
@@ -26,10 +32,12 @@
     "mongoose": "^8.0.3",
     "socket.io": "^4.8.1",
     "supertokens-node": "^18.0.3",
+    "uuid": "^11.1.0",
     "winston": "^3.11.0"
   },
   "devDependencies": {
     "@types/bull": "^4.10.0",
+    "@types/jest": "^30.0.0",
     "@types/koa": "^2.13.12",
     "@types/koa__cors": "^5.0.0",
     "@types/koa-bodyparser": "^4.3.12",
@@ -38,8 +46,11 @@
     "@types/node": "^20.9.0",
     "@typescript-eslint/eslint-plugin": "^6.11.0",
     "@typescript-eslint/parser": "^6.11.0",
+    "aws-sdk-mock": "^6.2.1",
     "eslint": "^8.53.0",
+    "jest": "^30.0.1",
     "prettier": "^3.0.3",
+    "ts-jest": "^29.4.0",
     "tsc-watch": "^6.0.4",
     "typescript": "^5.2.2"
   }

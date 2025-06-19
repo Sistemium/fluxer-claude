@@ -35,29 +35,19 @@ generateRoutes.post('/', verifySession(), async (ctx: any) => {
     const generateService = GenerateService.getInstance()
     
     logger.info('Step 6: Queueing generation')
-    const job = await generateService.queueGeneration({
+    const jobId = await generateService.queueGeneration({
       userId,
       ...value
     })
 
-    // Force start processing after a small delay
-    setTimeout(async () => {
-      try {
-        logger.info('Force processing job', { jobId: job.id })
-        await generateService.forceProcessJob(job.id as string)
-      } catch (error) {
-        logger.error('Error force processing job:', error)
-      }
-    }, 1000)
-
     logger.info('Step 7: Generation queued successfully')
     ctx.body = {
-      jobId: job.id,
+      jobId,
       status: 'queued',
       message: 'Image generation queued successfully'
     }
     
-    logger.info(`Step 8: Response sent, job ${job.id}`)
+    logger.info(`Step 8: Response sent, job ${jobId}`)
   } catch (error) {
     logger.error('Error in generate route:', error)
     ctx.status = 500
