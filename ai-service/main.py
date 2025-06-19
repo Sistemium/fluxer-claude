@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from services.flux_service import FluxService
-from services.queue_service import QueueService
 from models.generation_request import GenerationRequest, GenerationResponse
 
 # Configure logging
@@ -24,18 +23,16 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 flux_service: Optional[FluxService] = None
-queue_service: Optional[QueueService] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global flux_service, queue_service
+    global flux_service
     
     # Initialize services
     logger.info("Initializing AI services...")
     
     # Initialize Flux service (lazy loading)
     flux_service = FluxService()
-    queue_service = None
     
     logger.info("AI services initialized successfully")
     
@@ -136,20 +133,8 @@ async def generate_image(
         logger.error(f"Error generating image: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate image")
 
-@app.get("/job/{job_id}")
-async def get_job_status(job_id: str):
-    if not queue_service:
-        raise HTTPException(status_code=503, detail="Queue service not initialized")
-    
-    try:
-        status = await queue_service.get_job_status(job_id)
-        if not status:
-            raise HTTPException(status_code=404, detail="Job not found")
-        
-        return status
-    except Exception as e:
-        logger.error(f"Error getting job status: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get job status")
+# Job status is now handled by backend through SQS
+# No need for job status endpoint in AI service
 
 if __name__ == "__main__":
     import uvicorn
