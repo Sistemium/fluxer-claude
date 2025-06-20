@@ -234,7 +234,7 @@ export GITHUB_REPO="${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}"
 
 # Download and run setup script from GitHub
 # Choose script based on instance type
-INSTANCE_TYPE="${process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge'}"
+INSTANCE_TYPE="${process.env.SPOT_INSTANCE_TYPE}"
 if [[ "\$INSTANCE_TYPE" == inf2* ]]; then
     SETUP_SCRIPT="setup-ai-instance-ubuntu-inf2.sh"
     echo "Downloading Ubuntu + Inferentia2 setup script from GitHub..."
