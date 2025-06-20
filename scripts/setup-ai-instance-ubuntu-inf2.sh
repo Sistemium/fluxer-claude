@@ -6,8 +6,8 @@ echo "Starting setup at $(date)"
 
 # Update system and install essentials (Ubuntu)
 echo "Updating system packages..."
-apt-get update -y
-apt-get install -y git python3-pip curl unzip awscli
+apt update -y
+apt install -y git python3-pip curl unzip awscli
 
 # Get HuggingFace token from AWS Secrets Manager
 SPOT_REGION="${SPOT_AWS_REGION:-eu-west-1}"
@@ -31,11 +31,11 @@ else
     # Add Neuron repository for Ubuntu 22.04 (jammy)
     curl -fsSL https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-NEURON.PUB | apt-key add -
     echo "deb https://apt.repos.neuron.amazonaws.com jammy main" > /etc/apt/sources.list.d/neuron.list
-    apt-get update -y
+    apt update -y
     
     # Install Neuron packages for inf2
     echo "Installing Neuron runtime and tools..."
-    apt-get install -y aws-neuronx-runtime-lib aws-neuronx-tools
+    apt install -y aws-neuronx-runtime-lib aws-neuronx-tools
 fi
 
 # Install Python packages for Neuron
@@ -43,12 +43,25 @@ echo "Installing Neuron Python packages from official Neuron repository..."
 # Use official Neuron pip repository  
 pip3 install --extra-index-url=https://pip.repos.neuron.amazonaws.com neuronx-cc torch-neuronx transformers
 
-# Install AI packages (skip accelerate for Neuron compatibility)
+# Install AI packages 
 echo "Installing AI packages..."
 pip3 install diffusers fastapi uvicorn \
     safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
     sentencepiece python-dotenv
-# Skip accelerate - conflicts with Neuron per LESSONS.md
+
+# Test if accelerate is compatible with torch-neuronx
+echo "Testing accelerate compatibility with torch-neuronx..."
+if python3 -c "import torch_neuronx; print('torch-neuronx OK')" 2>/dev/null; then
+    if python3 -c "import torch_neuronx; import accelerate; print('accelerate + torch-neuronx OK')" 2>/dev/null; then
+        echo "accelerate is compatible with torch-neuronx"
+        pip3 install accelerate
+    else
+        echo "accelerate conflicts with torch-neuronx, skipping installation"
+    fi
+else
+    echo "torch-neuronx not available, installing accelerate"
+    pip3 install accelerate
+fi
 
 echo "Neuron SDK and AI packages installed successfully"
 
