@@ -29,7 +29,7 @@ flux_service: Optional[FluxService] = None
 async def send_service_event(event_type: str, data: dict):
     """Send AI service lifecycle events via EventBridge and MQTT"""
     try:
-        # Send via EventBridge
+        # Send via EventBridge only (lifecycle events don't need MQTT progress format)
         await asyncio.get_event_loop().run_in_executor(
             None, 
             eb_send_progress, 
@@ -38,14 +38,20 @@ async def send_service_event(event_type: str, data: dict):
             data
         )
         
-        # Send via MQTT  
-        await asyncio.get_event_loop().run_in_executor(
-            None,
-            send_progress_update,
-            "ai-service-lifecycle",
-            event_type,
-            data
-        )
+        # For MQTT, send as raw message if needed
+        try:
+            from services.mqtt_client import get_mqtt_client
+            client = get_mqtt_client()
+            if client:
+                topic = f"fluxer/ai/lifecycle/{event_type}"
+                payload = {
+                    'event_type': event_type,
+                    'data': data,
+                    'timestamp': import_time.time()
+                }
+                client._publish_message(topic, payload)
+        except Exception as mqtt_error:
+            logger.debug(f"MQTT lifecycle event failed (non-critical): {mqtt_error}")
         
         logger.info(f"Sent {event_type} event: {data}")
     except Exception as e:
