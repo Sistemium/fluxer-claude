@@ -158,9 +158,9 @@ export class AutoScalerService {
 
   private async scaleUp(queueDepth: number) {
     try {
-      logger.info('Scaling up - launching new spot instance', { queueDepth })
+      logger.info('Scaling up - launching new spot fleet', { queueDepth })
       
-      const instance = await this.spotService.launchSpotInstance()
+      const instance = await this.spotService.launchSpotFleet()
       this.lastScaleAction = Date.now()
       
       logger.info('Auto-scaled up successfully', {
@@ -277,7 +277,7 @@ export class AutoScalerService {
       throw new Error(`Maximum instances limit reached (${this.config.maxInstances})`)
     }
 
-    const instance = await this.spotService.launchSpotInstance()
+    const instance = await this.spotService.launchSpotFleet()
     this.lastScaleAction = Date.now()
     
     return instance

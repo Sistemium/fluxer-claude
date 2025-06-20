@@ -54,7 +54,9 @@ router.get('/spot/status', verifySession(), requireAdmin, async (ctx: Context) =
         publicIp: instance.publicIp,
         launchTime: instance.launchTime,
         spotPrice: instance.spotPrice,
-        availabilityZone: instance.availabilityZone
+        availabilityZone: instance.availabilityZone,
+        spotFleetId: instance.spotFleetId,
+        instanceType: instance.instanceType
       })),
       queueStats,
       config: {
@@ -85,17 +87,19 @@ router.post('/spot/launch', verifySession(), requireAdmin, async (ctx: Context) 
       return
     }
 
-    logger.info('Admin launching spot instance', { userId: ctx.state.userId })
+    logger.info('Admin launching spot fleet', { userId: ctx.state.userId })
     
-    const instance = await spotService.launchSpotInstance()
+    const instance = await spotService.launchSpotFleet()
     
     ctx.body = {
       success: true,
-      message: 'Spot instance launch initiated',
+      message: 'Spot fleet launch initiated',
       instance: {
         instanceId: instance.instanceId,
         spotRequestId: instance.spotRequestId,
-        state: instance.state
+        spotFleetId: instance.spotFleetId,
+        state: instance.state,
+        instanceType: instance.instanceType
       }
     }
   } catch (error) {

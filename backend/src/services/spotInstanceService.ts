@@ -3,7 +3,9 @@ import {
   TerminateInstancesCommand, 
   DescribeInstancesCommand,
   DescribeSpotInstanceRequestsCommand,
-  RequestSpotInstancesCommand
+  RequestSpotInstancesCommand,
+  RequestSpotFleetCommand,
+  DescribeSpotFleetRequestsCommand
 } from '@aws-sdk/client-ec2'
 import logger from '../utils/logger.js'
 import axios from 'axios'
@@ -21,12 +23,14 @@ interface SpotInstanceConfig {
 interface SpotInstanceInfo {
   instanceId: string
   spotRequestId: string
+  spotFleetId?: string  // For Spot Fleet requests
   state: string
   publicIp?: string
   privateIp?: string
   launchTime?: Date
   spotPrice?: string
   availabilityZone?: string
+  instanceType?: string
 }
 
 export class SpotInstanceService {
@@ -64,9 +68,10 @@ export class SpotInstanceService {
     
     logger.info('SpotInstanceService config', { 
       region: spotRegion,
-      subnetId: subnetId || 'auto-select',
+      subnetId: subnetId || 'auto-select-by-fleet',
       securityGroupIds: securityGroupIds.length > 0 ? securityGroupIds : 'default',
-      instanceType: this.config.instanceType 
+      instanceType: this.config.instanceType,
+      useSpotFleet: true
     })
 
     this.validateConfig()
@@ -327,6 +332,100 @@ echo "Instance setup completed!"
     }
   }
 
+  async launchSpotFleet(): Promise<SpotInstanceInfo> {
+    try {
+      logger.info('Launching spot fleet', { 
+        instanceTypes: [this.config.instanceType, 'g6e.xlarge'], // Fallback types
+        maxPrice: this.config.maxPrice,
+        imageId: this.config.imageId,
+        keyName: this.config.keyName,
+        securityGroupIds: this.config.securityGroupIds,
+        region: this.ec2.config.region
+      })
+
+      // Use direct launch specification (simpler than launch templates)
+      const fleetConfig = {
+        SpotFleetRequestConfig: {
+          IamFleetRole: `arn:aws:iam::${process.env.AWS_ACCOUNT_ID || '554658909973'}:role/aws-ec2-spot-fleet-tagging-role`,
+          AllocationStrategy: 'lowestPrice' as const,
+          TargetCapacity: 1,
+          SpotPrice: this.config.maxPrice,
+          LaunchSpecifications: [
+            {
+              ImageId: this.config.imageId,
+              InstanceType: this.config.instanceType as any,
+              KeyName: this.config.keyName,
+              SecurityGroups: this.config.securityGroupIds.map(id => ({ GroupId: id })),
+              UserData: this.config.userData,
+              IamInstanceProfile: {
+                Name: process.env.SPOT_IAM_INSTANCE_PROFILE || 'ai-service-role'
+              },
+              BlockDeviceMappings: [
+                {
+                  DeviceName: '/dev/sda1',
+                  Ebs: {
+                    VolumeSize: 100,
+                    VolumeType: 'gp3' as const,
+                    DeleteOnTermination: true
+                  }
+                }
+              ]
+            },
+            // Fallback instance type
+            {
+              ImageId: this.config.imageId,
+              InstanceType: 'g6e.xlarge' as any,
+              KeyName: this.config.keyName,
+              SecurityGroups: this.config.securityGroupIds.map(id => ({ GroupId: id })),
+              UserData: this.config.userData,
+              IamInstanceProfile: {
+                Name: process.env.SPOT_IAM_INSTANCE_PROFILE || 'ai-service-role'
+              },
+              BlockDeviceMappings: [
+                {
+                  DeviceName: '/dev/sda1',
+                  Ebs: {
+                    VolumeSize: 100,
+                    VolumeType: 'gp3' as const,
+                    DeleteOnTermination: true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+
+      const command = new RequestSpotFleetCommand(fleetConfig)
+      const response = await this.ec2.send(command)
+      
+      if (!response.SpotFleetRequestId) {
+        throw new Error('Failed to create spot fleet request')
+      }
+
+      logger.info('Spot fleet request created', { 
+        spotFleetId: response.SpotFleetRequestId 
+      })
+
+      // Wait for fleet to launch instances
+      const instanceInfo = await this.waitForSpotFleet(response.SpotFleetRequestId)
+      
+      // Store in active instances
+      this.activeInstances.set(instanceInfo.instanceId, instanceInfo)
+
+      logger.info('Spot fleet launched successfully', { 
+        instanceId: instanceInfo.instanceId,
+        spotFleetId: instanceInfo.spotFleetId 
+      })
+
+      return instanceInfo
+
+    } catch (error) {
+      logger.error('Failed to launch spot fleet', error)
+      throw error
+    }
+  }
+
   private async waitForSpotInstance(spotRequestId: string, maxWaitTime = 300000): Promise<SpotInstanceInfo> {
     const startTime = Date.now()
     
@@ -372,6 +471,72 @@ echo "Instance setup completed!"
     }
 
     throw new Error('Timeout waiting for spot instance to launch')
+  }
+
+  private async waitForSpotFleet(spotFleetId: string, maxWaitTime = 300000): Promise<SpotInstanceInfo> {
+    const startTime = Date.now()
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const command = new DescribeSpotFleetRequestsCommand({
+          SpotFleetRequestIds: [spotFleetId]
+        })
+        
+        const response = await this.ec2.send(command)
+        const fleetRequest = response.SpotFleetRequestConfigs?.[0]
+
+        if (fleetRequest?.SpotFleetRequestState === 'failed' || fleetRequest?.SpotFleetRequestState === 'cancelled') {
+          throw new Error(`Spot fleet request failed: ${fleetRequest.SpotFleetRequestState}`)
+        }
+
+        if (fleetRequest?.SpotFleetRequestState === 'active') {
+          // Get instances launched by the fleet
+          const instancesCommand = new DescribeInstancesCommand({
+            Filters: [
+              {
+                Name: 'spot-fleet-request-id',
+                Values: [spotFleetId]
+              },
+              {
+                Name: 'instance-state-name',
+                Values: ['running', 'pending']
+              }
+            ]
+          })
+          
+          const instancesResponse = await this.ec2.send(instancesCommand)
+          const instance = instancesResponse.Reservations?.[0]?.Instances?.[0]
+          
+          if (instance && instance.InstanceId) {
+            const instanceInfo: SpotInstanceInfo = {
+              instanceId: instance.InstanceId,
+              spotRequestId: instance.SpotInstanceRequestId || '',
+              spotFleetId: spotFleetId,
+              state: instance.State?.Name || 'unknown',
+              instanceType: instance.InstanceType || 'unknown',
+              ...(instance.PublicIpAddress && { publicIp: instance.PublicIpAddress }),
+              ...(instance.PrivateIpAddress && { privateIp: instance.PrivateIpAddress }),
+              ...(instance.LaunchTime && { launchTime: instance.LaunchTime }),
+              ...(instance.Placement?.AvailabilityZone && { availabilityZone: instance.Placement.AvailabilityZone })
+            }
+            
+            return instanceInfo
+          }
+        }
+
+        logger.info('Waiting for spot fleet to launch instances...', { 
+          spotFleetId, 
+          state: fleetRequest?.SpotFleetRequestState 
+        })
+        
+        await new Promise(resolve => setTimeout(resolve, 10000)) // Wait 10 seconds
+      } catch (error: any) {
+        logger.error('Error checking spot fleet status', error)
+        throw error
+      }
+    }
+
+    throw new Error('Timeout waiting for spot fleet to launch instances')
   }
 
   async getInstanceInfo(instanceId: string): Promise<SpotInstanceInfo> {
