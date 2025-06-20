@@ -6,8 +6,8 @@ echo "Starting setup at $(date)"
 
 # Update system and install essentials (Ubuntu)
 echo "Updating system packages..."
-apt update -y
-apt install -y git python3-pip curl unzip awscli
+apt-get update -y
+apt-get install -y git python3-pip curl unzip awscli
 
 # Get HuggingFace token from AWS Secrets Manager
 SPOT_REGION="${SPOT_AWS_REGION:-eu-west-1}"
@@ -31,11 +31,11 @@ else
     # Add Neuron repository for Ubuntu 22.04 (jammy)
     curl -fsSL https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-NEURON.PUB | apt-key add -
     echo "deb https://apt.repos.neuron.amazonaws.com jammy main" > /etc/apt/sources.list.d/neuron.list
-    apt update -y
+    apt-get update -y
     
     # Install Neuron packages for inf2
     echo "Installing Neuron runtime and tools..."
-    apt install -y aws-neuronx-runtime-lib aws-neuronx-tools
+    apt-get install -y aws-neuronx-runtime-lib aws-neuronx-tools
 fi
 
 # Install Python packages for Neuron
