@@ -19,7 +19,7 @@ interface ProgressEvent {
 interface CompletionEvent {
   jobId: string
   userId: string
-  imageUrl: string
+  status: string
   timestamp: string
 }
 
@@ -120,20 +120,26 @@ export class EventBridgeService {
       logger.info('Processing completion event', { 
         jobId: event.jobId, 
         userId: event.userId,
-        hasImageUrl: !!event.imageUrl 
+        status: event.status 
       })
 
-      // Update image record in database
+      // Update image record in database (status only, imageUrl already set by SQS handler)
       const image = await Image.findOne({ jobId: event.jobId, userId: event.userId })
       if (image) {
-        image.imageUrl = event.imageUrl
-        image.status = 'completed'
-        await image.save()
-        
-        logger.info('Image updated in database', { 
-          jobId: event.jobId, 
-          imageId: image._id 
-        })
+        // Only update status if not already completed (SQS handler might have already processed this)
+        if (image.status !== 'completed') {
+          image.status = 'completed'
+          await image.save()
+          
+          logger.info('Image status updated in database via EventBridge', { 
+            jobId: event.jobId, 
+            imageId: image._id 
+          })
+        } else {
+          logger.debug('Image already marked as completed, skipping EventBridge update', {
+            jobId: event.jobId
+          })
+        }
       } else {
         logger.warn('Job not found in database for completion event', { 
           jobId: event.jobId, 
@@ -141,9 +147,11 @@ export class EventBridgeService {
         })
       }
 
-      // Send WebSocket completion notification
-      const socketService = SocketService.getInstance()
-      socketService.emitCompleted(event.userId, event.jobId, event.imageUrl)
+      // Send WebSocket completion notification with image URL from database
+      if (image && image.imageUrl) {
+        const socketService = SocketService.getInstance()
+        socketService.emitCompleted(event.userId, event.jobId, image.imageUrl)
+      }
 
     } catch (error) {
       logger.error('Failed to handle completion event', { event, error })

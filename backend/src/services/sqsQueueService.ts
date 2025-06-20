@@ -5,6 +5,7 @@ import logger from '../utils/logger.js'
 import axios from 'axios'
 import { SocketService } from './socketService.js'
 import { SpotInstanceService } from './spotInstanceService.js'
+import { S3Service } from './s3Service.js'
 import { v4 as uuidv4 } from 'uuid'
 
 interface GenerationJobData {
@@ -196,17 +197,45 @@ export class SQSQueueService {
           throw new Error('AI service completed but no image_url provided')
         }
         
+        // If image_url is base64, upload to S3
+        let finalImageUrl = response.data.image_url
+        
+        if (response.data.image_url.startsWith('data:image/')) {
+          logger.info('Converting base64 image to S3 upload', { jobId: jobData.jobId })
+          
+          const s3Service = S3Service.getInstance()
+          const uploadResult = await s3Service.uploadBase64Image(
+            response.data.image_url,
+            jobData.userId,
+            jobData.jobId
+          )
+          
+          if (uploadResult.success && uploadResult.url) {
+            finalImageUrl = uploadResult.url
+            logger.info('Image uploaded to S3 successfully', {
+              jobId: jobData.jobId,
+              s3Url: finalImageUrl
+            })
+          } else {
+            logger.error('Failed to upload image to S3', {
+              jobId: jobData.jobId,
+              error: uploadResult.error
+            })
+            // Continue with base64 URL as fallback
+          }
+        }
+        
         // Update image record with result
         const image = await Image.findOne({ jobId: jobData.jobId })
         if (image) {
-          image.imageUrl = response.data.image_url
+          image.imageUrl = finalImageUrl
           image.status = 'completed'
           await image.save()
         }
         
         // Send WebSocket completion notification
         const socketService = SocketService.getInstance()
-        socketService.emitCompleted(jobData.userId, jobData.jobId, response.data.image_url)
+        socketService.emitCompleted(jobData.userId, jobData.jobId, finalImageUrl)
         
         logger.info(`Job ${jobData.jobId} completed successfully`)
         

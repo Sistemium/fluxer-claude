@@ -1,4 +1,5 @@
 import { Image, IImage } from '../models/Image.js'
+import { S3Service } from './s3Service.js'
 import logger from '../utils/logger.js'
 
 export class ImageService {
@@ -68,6 +69,35 @@ export class ImageService {
 
   async deleteImage(imageId: string, userId: string): Promise<boolean> {
     try {
+      // First get the image to extract S3 key
+      const image = await Image.findOne({ 
+        _id: imageId, 
+        userId 
+      })
+
+      if (!image) {
+        return false
+      }
+
+      // Delete from S3 if it's an S3 URL
+      if (image.imageUrl && !image.imageUrl.startsWith('data:image/')) {
+        const s3Service = S3Service.getInstance()
+        const s3Key = s3Service.extractS3Key(image.imageUrl)
+        
+        if (s3Key) {
+          logger.info('Deleting image from S3', { imageId, s3Key })
+          const deleted = await s3Service.deleteImage(s3Key)
+          
+          if (!deleted) {
+            logger.warn('Failed to delete image from S3, continuing with database deletion', { 
+              imageId, 
+              s3Key 
+            })
+          }
+        }
+      }
+
+      // Delete from database
       const result = await Image.deleteOne({ 
         _id: imageId, 
         userId 
@@ -77,7 +107,6 @@ export class ImageService {
         return false
       }
 
-      // In a real implementation, you would also delete the image file from S3
       logger.info(`Image ${imageId} deleted by user ${userId}`)
       return true
     } catch (error) {

@@ -243,10 +243,10 @@ async def generate_image(
         if result["status"] == "completed":
             image_url = f"data:image/png;base64,{result['image_data']}"
             
-            # Send completion event via MQTT and EventBridge
+            # Send completion event via MQTT and EventBridge (without image data)
             try:
-                send_completion_update(request.job_id, request.user_id, image_url)
-                eb_send_completion(request.job_id, request.user_id, image_url)
+                send_completion_update(request.job_id, request.user_id)
+                eb_send_completion(request.job_id, request.user_id)
             except Exception as e:
                 logger.warning(f"Failed to send completion event: {e}")
             

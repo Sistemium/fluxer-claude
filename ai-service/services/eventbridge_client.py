@@ -52,12 +52,12 @@ class EventBridgeClient:
         }
         return self._send_event('AI Generation Progress', detail)
     
-    def send_completion_event(self, job_id: str, user_id: str, image_url: str) -> bool:
-        """Send completion event"""
+    def send_completion_event(self, job_id: str, user_id: str) -> bool:
+        """Send completion event (without image data)"""
         detail = {
             'jobId': job_id,
             'userId': user_id,
-            'imageUrl': image_url,
+            'status': 'completed',
             'timestamp': datetime.utcnow().isoformat()
         }
         return self._send_event('AI Generation Completed', detail)
@@ -92,11 +92,11 @@ def send_progress_update(job_id: str, user_id: str, progress: int, message: str)
     except Exception as e:
         logger.error(f"Error in send_progress_update: {e}")
 
-def send_completion_update(job_id: str, user_id: str, image_url: str) -> None:
-    """Convenience function to send completion update"""
+def send_completion_update(job_id: str, user_id: str) -> None:
+    """Convenience function to send completion update (without image data)"""
     try:
         client = get_eventbridge_client()
-        success = client.send_completion_event(job_id, user_id, image_url)
+        success = client.send_completion_event(job_id, user_id)
         if not success:
             logger.warning(f"Failed to send completion update for job {job_id}")
     except Exception as e:

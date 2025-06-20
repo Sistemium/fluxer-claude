@@ -18,6 +18,7 @@
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.830.0",
     "@aws-sdk/client-eventbridge": "^3.830.0",
+    "@aws-sdk/client-s3": "^3.832.0",
     "@aws-sdk/client-sqs": "^3.831.0",
     "@koa/cors": "^5.0.0",
     "@koa/multer": "^3.0.2",

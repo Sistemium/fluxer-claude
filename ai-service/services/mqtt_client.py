@@ -103,13 +103,13 @@ class MqttClient:
         }
         return self._publish_message(topic, payload)
     
-    def send_completion_update(self, job_id: str, user_id: str, image_url: str) -> bool:
-        """Send completion update via MQTT"""
+    def send_completion_update(self, job_id: str, user_id: str) -> bool:
+        """Send completion update via MQTT (without image data)"""
         topic = f"fluxer/ai/completed/{user_id}/{job_id}"
         payload = {
             'jobId': job_id,
             'userId': user_id,
-            'imageUrl': image_url,
+            'status': 'completed',
             'timestamp': datetime.utcnow().isoformat()
         }
         return self._publish_message(topic, payload)
@@ -158,12 +158,12 @@ def send_progress_update(job_id: str, user_id: str, progress: int, message: str)
     except Exception as e:
         logger.error(f"Error in send_progress_update: {e}")
 
-def send_completion_update(job_id: str, user_id: str, image_url: str) -> None:
-    """Convenience function to send completion update"""
+def send_completion_update(job_id: str, user_id: str) -> None:
+    """Convenience function to send completion update (without image data)"""
     try:
         client = get_mqtt_client()
         if client:
-            success = client.send_completion_update(job_id, user_id, image_url)
+            success = client.send_completion_update(job_id, user_id)
             if not success:
                 logger.warning(f"Failed to send MQTT completion update for job {job_id}")
         else:
