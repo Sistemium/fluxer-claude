@@ -7,7 +7,8 @@ echo "Starting setup at $(date)"
 # Update system and install essentials (Amazon Linux 2023)
 echo "Updating system packages..."
 yum update -y
-yum install -y git curl python3 python3-pip awscli
+yum install -y git python3-pip
+# curl, python3, awscli уже предустановлены в Amazon Linux 2023
 
 # Get HuggingFace token from AWS Secrets Manager
 SPOT_REGION="${SPOT_AWS_REGION:-eu-west-1}"
