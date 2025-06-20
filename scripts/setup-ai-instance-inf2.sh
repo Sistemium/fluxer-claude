@@ -28,8 +28,8 @@ neuron-ls || echo "Neuron runtime not available"
 
 # Install Python packages for Neuron
 echo "Installing Neuron Python packages..."
-pip3 install --upgrade pip
-pip3 install neuronx-cc torch-neuronx torchvision transformers
+# Skip pip upgrade on Amazon Linux (rpm conflict)
+pip3 install neuronx-cc torch-neuronx transformers
 
 # Install AI packages compatible with Neuron
 pip3 install diffusers fastapi uvicorn \
