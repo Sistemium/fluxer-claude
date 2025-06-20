@@ -4,6 +4,23 @@ set -e
 echo "=== Fluxer AI Instance Setup Script ==="
 echo "Starting setup at $(date)"
 
+# Wait for cloud-init and unattended-upgrades to finish
+echo "Waiting for cloud-init and package managers to finish..."
+cloud-init status --wait 2>/dev/null || echo "cloud-init wait not available"
+
+# Wait for unattended-upgrades to finish (common issue on Ubuntu)
+echo "Waiting for unattended-upgrades to finish..."
+while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+    echo "Package manager is busy, waiting 10 seconds..."
+    sleep 10
+done
+
+# Clean up duplicate CUDA sources that cause warnings
+echo "Cleaning up duplicate APT sources..."
+if [ -f /etc/apt/sources.list.d/archive_uri-https_developer_download_nvidia_com_compute_cuda_repos_ubuntu2204_x86_64_-jammy.list ]; then
+    rm -f /etc/apt/sources.list.d/archive_uri-https_developer_download_nvidia_com_compute_cuda_repos_ubuntu2204_x86_64_-jammy.list
+fi
+
 # Update system and install essentials
 echo "Updating system packages..."
 apt-get update -y
