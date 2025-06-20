@@ -4,14 +4,43 @@ set -e
 echo "=== Fluxer AI Instance Setup Script ==="
 echo "Starting setup at $(date)"
 
-# Wait for cloud-init and unattended-upgrades to finish
-echo "Waiting for cloud-init and package managers to finish..."
-cloud-init status --wait 2>/dev/null || echo "cloud-init wait not available"
+# Check if we can write to log file (system is functional)
+echo "Testing system functionality..."
+if ! echo "System test" > /tmp/setup-test.log 2>/dev/null; then
+    echo "WARNING: System appears to be in a problematic state"
+fi
 
-# Wait for unattended-upgrades to finish (common issue on Ubuntu)
-echo "Waiting for unattended-upgrades to finish..."
+# Set aggressive timeouts to prevent infinite hangs
+export DEBIAN_FRONTEND=noninteractive
+export APT_GET_TIMEOUT=30
+
+# Wait for cloud-init with timeout
+echo "Waiting for cloud-init to finish (max 120 seconds)..."
+timeout 30 cloud-init status --wait 2>/dev/null || {
+    echo "Cloud-init wait timed out or not available, continuing..."
+    # Kill any stuck cloud-init processes
+    pkill -f cloud-init || true
+    sleep 5
+}
+
+# Wait for unattended-upgrades to finish with timeout
+echo "Waiting for package managers to finish (max 300 seconds)..."
+WAIT_COUNT=0
+MAX_WAIT=30 # 30 * 10 = 300 seconds
+
 while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-    echo "Package manager is busy, waiting 10 seconds..."
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+        echo "Package manager still busy after 300 seconds, force proceeding..."
+        # Kill unattended-upgrades if stuck
+        sudo pkill -f unattended-upgrade || true
+        sudo pkill -f apt || true
+        sleep 10
+        # Force unlock if still locked
+        sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock
+        break
+    fi
+    echo "Package manager is busy, waiting 10 seconds... ($((WAIT_COUNT * 10))/300 seconds)"
     sleep 10
 done
 
@@ -21,10 +50,30 @@ if [ -f /etc/apt/sources.list.d/archive_uri-https_developer_download_nvidia_com_
     rm -f /etc/apt/sources.list.d/archive_uri-https_developer_download_nvidia_com_compute_cuda_repos_ubuntu2204_x86_64_-jammy.list
 fi
 
-# Update system and install essentials
+# Update system and install essentials with retries
 echo "Updating system packages..."
-apt-get update -y
-apt-get install -y git curl python3 python3-pip awscli
+RETRY_COUNT=0
+MAX_RETRIES=3
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if apt-get update -y; then
+        echo "Package list updated successfully"
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        echo "apt-get update failed, retry $RETRY_COUNT/$MAX_RETRIES..."
+        sleep 10
+        
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "apt-get update failed after $MAX_RETRIES attempts, continuing anyway..."
+        fi
+    fi
+done
+
+echo "Installing essential packages..."
+apt-get install -y git curl python3 python3-pip awscli || {
+    echo "Package installation failed, but continuing..."
+}
 
 # Get HuggingFace token from AWS Secrets Manager  
 # Try spot region first, then fallback to main infrastructure region
