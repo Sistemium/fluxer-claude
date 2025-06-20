@@ -53,7 +53,7 @@ export class SpotInstanceService {
     const securityGroupIds = (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean)
     
     this.config = {
-      imageId: process.env.SPOT_AMI_ID || 'ami-00327cf4892d7780c', // Deep Learning AMI Neuron PyTorch 2.1 (Ubuntu 22.04) (eu-north-1)
+      imageId: process.env.SPOT_AMI_ID as string, // Configure in .env.local
       instanceType: process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge',
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
       securityGroupIds,
