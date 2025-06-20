@@ -53,7 +53,7 @@ export class SpotInstanceService {
     const securityGroupIds = (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean)
     
     this.config = {
-      imageId: process.env.SPOT_AMI_ID || 'ami-0b540c6cb0b6ea9e5', // AL2023 Neuron AMI for inf2.xlarge (eu-north-1)
+      imageId: process.env.SPOT_AMI_ID || 'ami-00327cf4892d7780c', // Deep Learning AMI Neuron PyTorch 2.1 (Ubuntu 22.04) (eu-north-1)
       instanceType: process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge',
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
       securityGroupIds,
@@ -218,8 +218,8 @@ export GITHUB_REPO="${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}"
 # Choose script based on instance type
 INSTANCE_TYPE="${process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge'}"
 if [[ "\$INSTANCE_TYPE" == inf2* ]]; then
-    SETUP_SCRIPT="setup-ai-instance-inf2.sh"
-    echo "Downloading Inferentia2 setup script from GitHub..."
+    SETUP_SCRIPT="setup-ai-instance-ubuntu-inf2.sh"
+    echo "Downloading Ubuntu + Inferentia2 setup script from GitHub..."
 else
     SETUP_SCRIPT="setup-ai-instance.sh"
     echo "Downloading GPU setup script from GitHub..."
@@ -267,7 +267,7 @@ echo "Instance setup completed!"
             {
               DeviceName: '/dev/sda1', // Root device for AMI
               Ebs: {
-                VolumeSize: 100, // GB - just OS and basic tools 
+                VolumeSize: 20, // GB - OS and FLUX model (24GB) 
                 VolumeType: 'gp3',
                 DeleteOnTermination: true
               }
