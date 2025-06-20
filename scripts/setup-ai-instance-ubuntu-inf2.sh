@@ -9,6 +9,10 @@ echo "Updating system packages..."
 apt-get update -y
 apt-get install -y git python3-pip curl unzip awscli
 
+# Fix OpenSSL/pyOpenSSL version conflicts in Deep Learning AMI
+echo "Fixing OpenSSL/pyOpenSSL compatibility issues..."
+pip3 install --upgrade pyopenssl cryptography urllib3 botocore boto3
+
 # Get HuggingFace token from AWS Secrets Manager
 SPOT_REGION="${SPOT_AWS_REGION:-eu-west-1}"
 echo "Retrieving HuggingFace token from AWS Secrets Manager in region $SPOT_REGION..."
@@ -33,11 +37,20 @@ fi
 
 # Check if torch-neuronx is already available (Deep Learning AMI should have it)
 echo "Checking torch-neuronx availability..."
-if python3 -c "import torch_neuronx; print('✅ torch-neuronx already available')" 2>/dev/null; then
-    echo "torch-neuronx is pre-installed"
+TORCH_NEURONX_TEST=$(python3 -c "
+try:
+    import torch_neuronx
+    print('torch-neuronx-ok')
+except Exception as e:
+    print(f'torch-neuronx-error: {e}')
+" 2>&1)
+
+if [[ "$TORCH_NEURONX_TEST" == *"torch-neuronx-ok"* ]]; then
+    echo "✅ torch-neuronx is working"
 else
-    echo "Installing torch-neuronx from Neuron repository..."
-    pip3 install --extra-index-url=https://pip.repos.neuron.amazonaws.com torch-neuronx transformers
+    echo "⚠️  torch-neuronx issue: $TORCH_NEURONX_TEST"
+    echo "Installing/upgrading torch-neuronx from Neuron repository..."
+    pip3 install --upgrade --extra-index-url=https://pip.repos.neuron.amazonaws.com torch-neuronx transformers
 fi
 
 # Install AI packages 
@@ -48,16 +61,28 @@ pip3 install diffusers fastapi uvicorn \
 
 # Test if accelerate is compatible with torch-neuronx
 echo "Testing accelerate compatibility with torch-neuronx..."
-if python3 -c "import torch_neuronx; print('torch-neuronx OK')" 2>/dev/null; then
-    if python3 -c "import torch_neuronx; import accelerate; print('accelerate + torch-neuronx OK')" 2>/dev/null; then
-        echo "✅ accelerate is compatible with torch-neuronx"
-        pip3 install accelerate
-    else
-        echo "⚠️  accelerate conflicts with torch-neuronx, skipping installation"
-    fi
-else
-    echo "torch-neuronx not available, installing accelerate"
+ACCELERATE_TEST=$(python3 -c "
+try:
+    import torch_neuronx
+    import accelerate
+    print('accelerate-compatible')
+except ImportError as e:
+    if 'accelerate' in str(e):
+        print('accelerate-missing')
+    else:
+        print('accelerate-conflict')
+except Exception as e:
+    print(f'accelerate-error: {e}')
+" 2>&1)
+
+if [[ "$ACCELERATE_TEST" == *"accelerate-compatible"* ]]; then
+    echo "✅ accelerate is already compatible with torch-neuronx"
+elif [[ "$ACCELERATE_TEST" == *"accelerate-missing"* ]]; then
+    echo "Installing accelerate..."
     pip3 install accelerate
+else
+    echo "⚠️  accelerate conflicts with torch-neuronx, skipping installation"
+    echo "Conflict details: $ACCELERATE_TEST"
 fi
 
 echo "Neuron SDK and AI packages installed successfully"
