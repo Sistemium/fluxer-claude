@@ -180,6 +180,10 @@ class FluxService:
             
             logger.info(f"Generating image with prompt: {prompt[:50]}...")
             
+            # Note: FLUX uses both CLIP (77 tokens) and T5-XXL (512 tokens) encoders
+            # CLIP warnings about 77 token limit can be safely ignored
+            # The T5 encoder will process the full prompt up to 512 tokens
+            
             if progress_callback:
                 progress_callback(20, "Starting diffusion process...")
             
