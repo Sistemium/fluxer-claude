@@ -27,9 +27,9 @@ echo "Checking AWS Neuron SDK for Inferentia2..."
 neuron-ls || echo "Neuron runtime not available"
 
 # Install Python packages for Neuron
-echo "Installing Neuron Python packages..."
-# Skip pip upgrade on Amazon Linux (rpm conflict)
-pip3 install neuronx-cc torch-neuronx transformers
+echo "Installing Neuron Python packages from official Neuron repository..."
+# Use official Neuron pip repository
+pip3 install --extra-index-url=https://pip.repos.neuron.amazonaws.com neuronx-cc torch-neuronx transformers
 
 # Install AI packages compatible with Neuron
 pip3 install diffusers fastapi uvicorn \
