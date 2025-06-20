@@ -22,25 +22,9 @@ else
     echo "Warning: Could not retrieve HuggingFace token from Secrets Manager"
 fi
 
-# Setup Neuron SDK for Inferentia2
-echo "Setting up AWS Neuron SDK for Inferentia2..."
-
-# Add Neuron repository for Amazon Linux 2023
-echo "Setting up Neuron repository for Amazon Linux 2023..."
-
-# Try alternative approaches for Neuron installation
-# Method 1: Disable GPG check temporarily
-tee /etc/yum.repos.d/neuron.repo > /dev/null <<EOF
-[neuron]
-name=Neuron YUM Repository
-baseurl=https://yum.repos.neuron.amazonaws.com
-enabled=1
-gpgcheck=0
-metadata_expire=0
-EOF
-
-# Install Neuron runtime and tools
-yum install -y aws-neuronx-runtime-lib aws-neuronx-tools
+# Check Neuron SDK for Inferentia2 (pre-installed on inf2 AMI)
+echo "Checking AWS Neuron SDK for Inferentia2..."
+neuron-ls || echo "Neuron runtime not available"
 
 # Install Python packages for Neuron
 echo "Installing Neuron Python packages..."
