@@ -198,7 +198,7 @@ class FluxService:
                     height=height,
                     guidance_scale=guidance_scale,
                     num_inference_steps=num_inference_steps,
-                    max_sequence_length=256,
+                    max_sequence_length=512,
                     callback_on_step_end=step_callback
                 )
                 
