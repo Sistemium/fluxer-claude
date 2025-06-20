@@ -23,7 +23,11 @@ fi
 
 # Use pre-mounted instance store from Deep Learning AMI
 if [ -d "/opt/dlami/nvme" ]; then
-    echo "Using Deep Learning AMI instance store at /opt/dlami/nvme (229GB)"
+    echo "Using Deep Learning AMI instance store at /opt/dlami/nvme"
+    
+    # Check available space for g6e.xlarge (2x NVMe SSDs)
+    NVME_SPACE=$(df -h /opt/dlami/nvme | tail -1 | awk '{print $2}')
+    echo "Instance store space available: $NVME_SPACE"
     
     # Create ML directories with proper permissions
     mkdir -p /opt/dlami/nvme/python
