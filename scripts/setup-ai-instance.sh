@@ -66,17 +66,43 @@ if [ -d "/opt/dlami/nvme" ]; then
     if [ -n "$PYTHON_BASE" ]; then
         if [ "$PYTHON_TYPE" = "conda" ]; then
             source "$PYTHON_BASE/etc/profile.d/conda.sh"
-            conda activate base
+            
+            # Try to find and activate pytorch environment
+            if conda env list | grep -q pytorch; then
+                echo "Activating pytorch conda environment..."
+                conda activate pytorch
+            elif conda env list | grep -q py310; then
+                echo "Activating py310 conda environment..."
+                conda activate py310  
+            else
+                echo "Using conda base environment..."
+                conda activate base
+            fi
         fi
         
         echo "Checking PyTorch installation..."
-        "$PYTHON_BASE/bin/python" -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+        if [ "$PYTHON_TYPE" = "conda" ]; then
+            python -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())" || {
+                echo "PyTorch not found, installing..."
+                conda install pytorch torchvision pytorch-cuda -c pytorch -c nvidia -y
+            }
+        else
+            "$PYTHON_BASE/bin/python" -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+        fi
         
-        "$PYTHON_BASE/bin/pip" install --cache-dir /opt/dlami/nvme/pip-cache \
-            diffusers transformers accelerate \
-            fastapi uvicorn \
-            safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
-            sentencepiece python-dotenv
+        if [ "$PYTHON_TYPE" = "conda" ]; then
+            pip install --cache-dir /opt/dlami/nvme/pip-cache \
+                diffusers transformers accelerate \
+                fastapi uvicorn \
+                safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
+                sentencepiece python-dotenv
+        else
+            "$PYTHON_BASE/bin/pip" install --cache-dir /opt/dlami/nvme/pip-cache \
+                diffusers transformers accelerate \
+                fastapi uvicorn \
+                safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
+                sentencepiece python-dotenv
+        fi
     else
         echo "No PyTorch environment found, using system python3..."
         pip3 install --cache-dir /opt/dlami/nvme/pip-cache \
@@ -118,11 +144,20 @@ EOF
 # Create systemd service - use detected python environment
 echo "Creating systemd service..."
 if [ -n "$PYTHON_BASE" ]; then
-    PYTHON_PATH="$PYTHON_BASE/bin/python"
-    PATH_ENV="$PYTHON_BASE/bin:/usr/bin:/usr/local/bin"
+    if [ "$PYTHON_TYPE" = "conda" ]; then
+        # For conda, use activation script
+        PYTHON_PATH="$PYTHON_BASE/bin/python"
+        PATH_ENV="$PYTHON_BASE/bin:/usr/bin:/usr/local/bin"
+        CONDA_ACTIVATE="source $PYTHON_BASE/etc/profile.d/conda.sh && conda activate pytorch || conda activate py310 || conda activate base"
+    else
+        PYTHON_PATH="$PYTHON_BASE/bin/python"
+        PATH_ENV="$PYTHON_BASE/bin:/usr/bin:/usr/local/bin"
+        CONDA_ACTIVATE=""
+    fi
 else
     PYTHON_PATH="/usr/bin/python3"
     PATH_ENV="/usr/bin:/usr/local/bin"
+    CONDA_ACTIVATE=""
 fi
 
 cat << EOF > /etc/systemd/system/ai-service.service
@@ -136,7 +171,7 @@ User=ubuntu
 WorkingDirectory=/opt/ai-service
 EnvironmentFile=/opt/ai-service.env
 Environment=PATH=$PATH_ENV
-ExecStart=$PYTHON_PATH main.py
+ExecStart=/bin/bash -c '$CONDA_ACTIVATE && $PYTHON_PATH main.py'
 Restart=always
 RestartSec=10
 
