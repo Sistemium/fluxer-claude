@@ -104,6 +104,12 @@
 - Deep Learning AMI как база (PyTorch, драйверы предустановлены)
 - inf2 AMI уже содержит Neuron runtime
 
+### Spot Instance отслеживание
+- AWS может забрать spot instance и запустить новый с другим instance ID
+- SpotInstanceService должен периодически сканировать новые инстансы
+- refreshInstanceStatus() теперь обновляет кэш И ищет новые инстансы
+- Без этого backend не видит replacement инстансы
+
 ---
 *Обновлено: $(date +%Y-%m-%d)*
 *Помните: пользователь знает свою конфигурацию лучше!*

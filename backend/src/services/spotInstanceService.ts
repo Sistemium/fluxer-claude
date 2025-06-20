@@ -107,13 +107,12 @@ export class SpotInstanceService {
   }
 
   private async refreshInstanceStatus(): Promise<void> {
-    if (this.activeInstances.size === 0) return
-
     try {
-      const instanceIds = Array.from(this.activeInstances.keys())
-      logger.debug('Refreshing instance status', { instanceIds })
+      // First, update existing instances in cache
+      const cachedInstanceIds = Array.from(this.activeInstances.keys())
+      logger.debug('Refreshing cached instance status', { instanceIds: cachedInstanceIds })
       
-      for (const instanceId of instanceIds) {
+      for (const instanceId of cachedInstanceIds) {
         try {
           const currentInfo = await this.getInstanceInfo(instanceId)
           this.activeInstances.set(instanceId, {
@@ -129,6 +128,11 @@ export class SpotInstanceService {
           this.activeInstances.delete(instanceId)
         }
       }
+
+      // Then, scan for new instances that might have been created (e.g., spot replacement)
+      logger.debug('Scanning for new instances')
+      await this.loadExistingInstances()
+      
     } catch (error) {
       logger.error('Error refreshing instance status', error)
     }
@@ -157,6 +161,7 @@ export class SpotInstanceService {
       const response = await this.ec2.send(command)
       const instances: SpotInstanceInfo[] = []
 
+      let newInstancesCount = 0
       for (const reservation of response.Reservations || []) {
         for (const instance of reservation.Instances || []) {
           if (instance.InstanceId) {
@@ -171,19 +176,32 @@ export class SpotInstanceService {
             }
             
             instances.push(instanceInfo)
+            
+            // Only log if this is a new instance
+            if (!this.activeInstances.has(instance.InstanceId)) {
+              newInstancesCount++
+              logger.info('Found new instance', {
+                instanceId: instance.InstanceId,
+                state: instanceInfo.state,
+                publicIp: instanceInfo.publicIp
+              })
+            }
+            
             this.activeInstances.set(instance.InstanceId, instanceInfo)
           }
         }
       }
 
-      logger.info('Loaded existing instances', { 
-        count: instances.length,
-        instances: instances.map(i => ({ 
-          instanceId: i.instanceId, 
-          state: i.state, 
-          publicIp: i.publicIp 
-        }))
-      })
+      if (newInstancesCount > 0) {
+        logger.info('Discovered new instances', { 
+          newInstancesCount,
+          totalInstancesCount: instances.length
+        })
+      } else {
+        logger.debug('No new instances found', { 
+          totalInstancesCount: instances.length
+        })
+      }
 
     } catch (error) {
       logger.error('Error loading existing instances', error)
