@@ -7,6 +7,7 @@ import {
   RequestSpotFleetCommand,
   DescribeSpotFleetRequestsCommand
 } from '@aws-sdk/client-ec2'
+import { SpotRegionService } from './spotRegionService.js'
 import logger from '../utils/logger.js'
 import axios from 'axios'
 
@@ -40,45 +41,30 @@ export class SpotInstanceService {
   private activeInstances: Map<string, SpotInstanceInfo> = new Map()
 
   constructor() {
-    const spotRegion = process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'
+    // Initialize with default region - will be updated from DB
+    const defaultRegion = process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
     
     this.ec2 = new EC2Client({
-      region: spotRegion,
+      region: defaultRegion,
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID as string,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY as string,
       },
     })
 
-    logger.info('SpotInstanceService using region', { region: spotRegion })
+    logger.info('SpotInstanceService initializing with default region', { region: defaultRegion })
 
-    // Load configuration from environment variables
-    const subnetId = process.env.AWS_SUBNET_ID
-    const securityGroupIds = (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean)
-    
+    // Initialize with fallback configuration - will be updated from DB
     this.config = {
-      imageId: process.env.SPOT_AMI_ID as string, // Configure in .env.local
-      instanceType: process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge',
+      imageId: process.env.SPOT_AMI_ID || 'ami-0866a3c8686eaeeba', // Fallback AMI
+      instanceType: process.env.SPOT_INSTANCE_TYPE || 'g6e.xlarge',
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
-      securityGroupIds,
-      ...(subnetId && { subnetId }),
-      maxPrice: process.env.SPOT_MAX_PRICE || '0.50', // $0.50/hour max
+      securityGroupIds: (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean),
+      maxPrice: process.env.SPOT_MAX_PRICE || '0.50',
       userData: this.generateUserData()
     }
-    
-    logger.info('SpotInstanceService config', { 
-      region: spotRegion,
-      subnetId: subnetId || 'auto-select-by-fleet',
-      securityGroupIds: securityGroupIds.length > 0 ? securityGroupIds : 'default',
-      instanceType: this.config.instanceType,
-      useSpotFleet: true
-    })
 
-    this.validateConfig()
-    logger.info('SpotInstanceService initialized', { 
-      instanceType: this.config.instanceType,
-      maxPrice: this.config.maxPrice 
-    })
+    logger.info('SpotInstanceService initialized with fallback config')
   }
 
   static getInstance(): SpotInstanceService {
@@ -90,13 +76,65 @@ export class SpotInstanceService {
 
   async initialize(): Promise<void> {
     try {
-      logger.info('Initializing SpotInstanceService - loading existing instances')
+      logger.info('Initializing SpotInstanceService - loading config from DB')
+      
+      // Load region configuration from database
+      await this.loadRegionConfig()
+      
+      logger.info('Loading existing instances')
       await this.loadExistingInstances()
       
       // Start periodic refresh of instance status
       this.startPeriodicRefresh()
     } catch (error) {
       logger.error('Failed to initialize SpotInstanceService', error)
+    }
+  }
+
+  async loadRegionConfig(): Promise<void> {
+    try {
+      const regionService = SpotRegionService.getInstance()
+      const defaultRegion = await regionService.getDefaultRegion()
+      
+      if (!defaultRegion) {
+        logger.warn('No default region found in database, using environment config')
+        this.validateConfig()
+        return
+      }
+
+      // Update EC2 client with new region
+      this.ec2 = new EC2Client({
+        region: defaultRegion.regionCode,
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID as string,
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY as string,
+        },
+      })
+
+      // Update configuration from database
+      this.config = {
+        imageId: defaultRegion.amiId,
+        instanceType: defaultRegion.instanceTypes[0] || 'g6e.xlarge', // Use first available instance type
+        keyName: process.env.AWS_KEY_PAIR_NAME as string, // Still from env
+        securityGroupIds: defaultRegion.securityGroupIds,
+        maxPrice: defaultRegion.spotPrice.toString(),
+        userData: this.generateUserData()
+      }
+
+      logger.info('Loaded spot configuration from database', {
+        region: defaultRegion.regionCode,
+        regionName: defaultRegion.regionName,
+        amiId: defaultRegion.amiId,
+        instanceType: this.config.instanceType,
+        maxPrice: this.config.maxPrice,
+        securityGroupCount: defaultRegion.securityGroupIds.length,
+        availableInstanceTypes: defaultRegion.instanceTypes
+      })
+
+      this.validateConfig()
+    } catch (error) {
+      logger.error('Failed to load region config from database, using environment config', error)
+      this.validateConfig()
     }
   }
 

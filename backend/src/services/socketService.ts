@@ -71,6 +71,25 @@ export class SocketService {
     logger.info(`Sent completion to user ${userId}: job ${jobId}`)
   }
 
+  // Send completion notification with both S3 URL and base64 preview
+  emitCompletedWithPreview(userId: string, jobId: string, imageUrl: string, previewBase64?: string | null) {
+    if (!this.io) return
+    
+    const completionData = {
+      jobId: String(jobId),
+      imageUrl, // S3 URL for permanent storage
+      timestamp: new Date().toISOString(),
+      ...(previewBase64 && { previewBase64 }) // base64 for immediate preview
+    }
+    
+    this.io.to(`user:${userId}`).emit('generation:completed', completionData)
+    
+    logger.info(`Sent completion with preview to user ${userId}: job ${jobId}`, {
+      hasPreview: !!previewBase64,
+      s3Url: imageUrl
+    })
+  }
+
   // Send error notification
   emitError(userId: string, jobId: string, error: string) {
     if (!this.io) return

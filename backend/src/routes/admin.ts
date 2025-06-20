@@ -3,6 +3,7 @@ import { Context } from 'koa'
 import { SpotInstanceService } from '../services/spotInstanceService.js'
 import { SQSQueueService } from '../services/sqsQueueService.js'
 import { AutoScalerService } from '../services/autoScalerService.js'
+import { SpotRegionService } from '../services/spotRegionService.js'
 import logger from '../utils/logger.js'
 import { verifySession } from 'supertokens-node/recipe/session/framework/koa/index.js'
 
@@ -356,6 +357,171 @@ router.post('/spot/notify', async (ctx: Context) => {
     logger.error('Failed to process spot notification', error)
     ctx.status = 500
     ctx.body = { error: 'Failed to process notification' }
+  }
+})
+
+// === SPOT REGIONS MANAGEMENT ===
+
+// Get all spot regions
+router.get('/regions', verifySession(), requireAdmin, async (ctx: Context) => {
+  try {
+    const regionService = SpotRegionService.getInstance()
+    const regions = await regionService.getAllRegions()
+    
+    ctx.body = {
+      regions: regions.map(region => ({
+        regionCode: region.regionCode,
+        regionName: region.regionName,
+        amiId: region.amiId,
+        securityGroupIds: region.securityGroupIds,
+        isActive: region.isActive,
+        isDefault: region.isDefault,
+        spotPrice: region.spotPrice,
+        instanceTypes: region.instanceTypes,
+        availabilityZones: region.availabilityZones,
+        notes: region.notes,
+        createdAt: region.createdAt,
+        updatedAt: region.updatedAt
+      }))
+    }
+  } catch (error) {
+    logger.error('Failed to get regions', error)
+    ctx.status = 500
+    ctx.body = { error: 'Failed to get regions' }
+  }
+})
+
+// Get active regions only
+router.get('/regions/active', verifySession(), requireAdmin, async (ctx: Context) => {
+  try {
+    const regionService = SpotRegionService.getInstance()
+    const regions = await regionService.getActiveRegions()
+    
+    ctx.body = { regions }
+  } catch (error) {
+    logger.error('Failed to get active regions', error)
+    ctx.status = 500
+    ctx.body = { error: 'Failed to get active regions' }
+  }
+})
+
+// Set default region
+router.post('/regions/:regionCode/set-default', verifySession(), requireAdmin, async (ctx: Context) => {
+  try {
+    const { regionCode } = ctx.params
+    const regionService = SpotRegionService.getInstance()
+    
+    logger.info('Admin setting default region', { 
+      userId: ctx.state.userId, 
+      regionCode 
+    })
+    
+    const region = await regionService.setDefaultRegion(regionCode)
+    
+    if (!region) {
+      ctx.status = 404
+      ctx.body = { error: 'Region not found or inactive' }
+      return
+    }
+    
+    ctx.body = {
+      success: true,
+      message: `Set ${regionCode} as default region`,
+      region
+    }
+  } catch (error) {
+    logger.error('Failed to set default region', error)
+    ctx.status = 500
+    ctx.body = { error: (error as Error).message || 'Failed to set default region' }
+  }
+})
+
+// Toggle region active status
+router.post('/regions/:regionCode/toggle', verifySession(), requireAdmin, async (ctx: Context) => {
+  try {
+    const { regionCode } = ctx.params
+    const regionService = SpotRegionService.getInstance()
+    
+    logger.info('Admin toggling region status', { 
+      userId: ctx.state.userId, 
+      regionCode 
+    })
+    
+    const region = await regionService.toggleRegionStatus(regionCode)
+    
+    if (!region) {
+      ctx.status = 404
+      ctx.body = { error: 'Region not found' }
+      return
+    }
+    
+    ctx.body = {
+      success: true,
+      message: `Region ${regionCode} ${region.isActive ? 'activated' : 'deactivated'}`,
+      region
+    }
+  } catch (error) {
+    logger.error('Failed to toggle region status', error)
+    ctx.status = 500
+    ctx.body = { error: (error as Error).message || 'Failed to toggle region status' }
+  }
+})
+
+// Update region configuration
+router.put('/regions/:regionCode', verifySession(), requireAdmin, async (ctx: Context) => {
+  try {
+    const { regionCode } = ctx.params
+    const updates = ctx.request.body as any
+    const regionService = SpotRegionService.getInstance()
+    
+    logger.info('Admin updating region', { 
+      userId: ctx.state.userId, 
+      regionCode,
+      updates 
+    })
+    
+    const region = await regionService.updateRegion(regionCode, updates)
+    
+    if (!region) {
+      ctx.status = 404
+      ctx.body = { error: 'Region not found' }
+      return
+    }
+    
+    ctx.body = {
+      success: true,
+      message: `Region ${regionCode} updated`,
+      region
+    }
+  } catch (error) {
+    logger.error('Failed to update region', error)
+    ctx.status = 500
+    ctx.body = { error: (error as Error).message || 'Failed to update region' }
+  }
+})
+
+// Create new region
+router.post('/regions', verifySession(), requireAdmin, async (ctx: Context) => {
+  try {
+    const regionData = ctx.request.body as any
+    const regionService = SpotRegionService.getInstance()
+    
+    logger.info('Admin creating new region', { 
+      userId: ctx.state.userId, 
+      regionData 
+    })
+    
+    const region = await regionService.createRegion(regionData)
+    
+    ctx.body = {
+      success: true,
+      message: `Region ${region.regionCode} created`,
+      region
+    }
+  } catch (error) {
+    logger.error('Failed to create region', error)
+    ctx.status = 500
+    ctx.body = { error: (error as Error).message || 'Failed to create region' }
   }
 })
 

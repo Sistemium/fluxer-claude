@@ -321,7 +321,9 @@ export class SQSQueueService {
       logger.info(`Job found in database`, { 
         jobId, 
         status: image.status,
-        imageId: image._id 
+        imageId: image._id,
+        hasImageUrl: !!image.imageUrl,
+        imageUrl: image.imageUrl?.substring(0, 100) + '...' // Log first 100 chars
       })
 
       return {
