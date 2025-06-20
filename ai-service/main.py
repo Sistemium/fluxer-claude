@@ -5,6 +5,8 @@ import torch
 import logging
 import os
 import requests
+import time as import_time
+import asyncio
 from typing import Optional
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
@@ -24,6 +26,31 @@ logger = logging.getLogger(__name__)
 # Global variables
 flux_service: Optional[FluxService] = None
 
+async def send_service_event(event_type: str, data: dict):
+    """Send AI service lifecycle events via EventBridge and MQTT"""
+    try:
+        # Send via EventBridge
+        await asyncio.get_event_loop().run_in_executor(
+            None, 
+            eb_send_progress, 
+            "ai-service-lifecycle", 
+            event_type, 
+            data
+        )
+        
+        # Send via MQTT  
+        await asyncio.get_event_loop().run_in_executor(
+            None,
+            send_progress_update,
+            "ai-service-lifecycle",
+            event_type,
+            data
+        )
+        
+        logger.info(f"Sent {event_type} event: {data}")
+    except Exception as e:
+        logger.error(f"Failed to send {event_type} event: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global flux_service
@@ -31,8 +58,43 @@ async def lifespan(app: FastAPI):
     # Initialize services
     logger.info("Initializing AI services...")
     
-    # Initialize Flux service (lazy loading)
-    flux_service = FluxService()
+    try:
+        # Send startup event
+        instance_id = os.getenv('EC2_INSTANCE_ID', 'unknown')
+        await send_service_event("ai_service_starting", {
+            "instance_id": instance_id,
+            "model_name": os.getenv('MODEL_NAME', 'unknown'),
+            "timestamp": import_time.time()
+        })
+        
+        # Initialize Flux service with eager loading
+        flux_service = FluxService()
+        
+        # Eager load the model
+        logger.info("Eager loading FLUX model...")
+        success = flux_service.load_model()
+        
+        if success:
+            logger.info("FLUX model loaded successfully - AI service ready!")
+            # Send ready event
+            await send_service_event("ai_service_ready", {
+                "instance_id": instance_id,
+                "model_name": os.getenv('MODEL_NAME', 'unknown'), 
+                "model_loaded": True,
+                "timestamp": import_time.time()
+            })
+        else:
+            raise Exception("Failed to load FLUX model")
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize AI service: {e}")
+        # Send error event
+        await send_service_event("ai_service_error", {
+            "instance_id": instance_id,
+            "error": str(e),
+            "timestamp": import_time.time()
+        })
+        raise
     
     logger.info("AI services initialized successfully")
     
@@ -40,6 +102,11 @@ async def lifespan(app: FastAPI):
     
     # Cleanup
     logger.info("Shutting down AI services...")
+    # Send shutdown event
+    await send_service_event("ai_service_stopping", {
+        "instance_id": instance_id,
+        "timestamp": import_time.time()
+    })
     cleanup_mqtt()
 
 app = FastAPI(
@@ -106,6 +173,9 @@ async def health_check():
             compute_count = 1
         
         model_name = os.getenv('MODEL_NAME', 'AI model')
+        instance_id = os.getenv('EC2_INSTANCE_ID', 'unknown')
+        instance_type = os.getenv('EC2_INSTANCE_TYPE', 'unknown')
+        
         return {
             "status": "healthy",
             "device": device,
@@ -117,6 +187,10 @@ async def health_check():
             "compute_count": compute_count,
             "model_loaded": flux_service is not None and flux_service.is_loaded,
             "model_name": model_name,
+            "instance_id": instance_id,
+            "instance_type": instance_type,
+            "eager_loading": True,  # Indicate this service uses eager loading
+            "startup_time": import_time.time()
         }
     except Exception as e:
         return {

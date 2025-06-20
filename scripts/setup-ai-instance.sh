@@ -142,6 +142,11 @@ cd /opt/ai-service
 
 # Set up environment - models cache to instance store, packages system
 echo "Setting up environment variables..."
+
+# Get EC2 instance metadata
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+INSTANCE_TYPE=$(curl -s http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null || echo "unknown")
+
 cat << EOF > /opt/ai-service.env
 AWS_REGION=${SPOT_AWS_REGION:-${AWS_REGION:-eu-west-1}}
 BACKEND_URL=${BACKEND_URL:-http://localhost:3000}
@@ -151,6 +156,8 @@ HUGGINGFACE_HUB_CACHE=/opt/dlami/nvme/huggingface
 TORCH_HOME=/opt/dlami/nvme/torch-cache
 CUDA_VISIBLE_DEVICES=0
 MODEL_NAME=black-forest-labs/FLUX.1-dev
+EC2_INSTANCE_ID=$INSTANCE_ID
+EC2_INSTANCE_TYPE=$INSTANCE_TYPE
 EOF
 
 # Create systemd service - use detected python environment

@@ -80,10 +80,81 @@ class FluxService:
             
             self.is_loaded = True
             logger.info(f"{self.model_id} model loaded successfully")
+            return True
             
         except Exception as e:
             logger.error(f"Failed to load {self.model_id} model: {e}")
-            raise
+            return False
+    
+    def load_model(self) -> bool:
+        """Synchronous wrapper for model loading (for eager loading)"""
+        try:
+            # Login to HuggingFace if token is provided
+            hf_token = os.getenv("HUGGINGFACE_TOKEN")
+            if hf_token:
+                logger.info("Logging in to HuggingFace...")
+                login(token=hf_token)
+            
+            logger.info(f"Loading {self.model_id} model on {self.device}...")
+            
+            # Load the pipeline
+            model_id = self.model_id
+            
+            try:
+                if model_id == "black-forest-labs/FLUX.1-dev":
+                    from diffusers import FluxPipeline
+                    
+                    # CPU optimizations for FLUX
+                    if self.device == "cpu":
+                        self.pipeline = FluxPipeline.from_pretrained(
+                            model_id,
+                            torch_dtype=torch.float32,
+                            use_safetensors=True,
+                            low_cpu_mem_usage=True
+                        )
+                    else:
+                        self.pipeline = FluxPipeline.from_pretrained(
+                            model_id,
+                            torch_dtype=torch.bfloat16,
+                            use_safetensors=True,
+                            low_cpu_mem_usage=True
+                        )
+                else:
+                    # Fallback to Stable Diffusion XL for development
+                    from diffusers import StableDiffusionXLPipeline
+                    self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                        "stabilityai/stable-diffusion-xl-base-1.0",
+                        torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                        use_safetensors=True
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to load {model_id}, falling back to SDXL: {e}")
+                # Fallback to SDXL if FLUX fails
+                from diffusers import StableDiffusionXLPipeline
+                self.pipeline = StableDiffusionXLPipeline.from_pretrained(
+                    "stabilityai/stable-diffusion-xl-base-1.0",
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                    use_safetensors=True
+                )
+            
+            if self.device == "cuda":
+                self.pipeline = self.pipeline.to("cuda")
+                # Enable memory efficient attention if available
+                try:
+                    self.pipeline.enable_xformers_memory_efficient_attention()
+                except:
+                    logger.warning("xformers not available, using default attention")
+                
+                # Enable CPU offload for memory optimization  
+                self.pipeline.enable_model_cpu_offload()
+            
+            self.is_loaded = True
+            logger.info(f"{self.model_id} model loaded successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to load {self.model_id} model: {e}")
+            return False
     
     async def generate_image(self, request_data: Dict[str, Any], progress_callback=None) -> Dict[str, Any]:
         """Generate an image from the request data"""
