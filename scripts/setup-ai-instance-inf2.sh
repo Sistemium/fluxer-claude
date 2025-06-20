@@ -41,7 +41,7 @@ echo "Neuron SDK and AI packages installed successfully"
 # Create directories for models and cache
 mkdir -p /opt/neuron/models
 mkdir -p /opt/neuron/cache
-chown -R ubuntu:ubuntu /opt/neuron
+chown -R ec2-user:ec2-user /opt/neuron
 chmod -R 755 /opt/neuron
 
 # Clone AI service code from Git
@@ -75,7 +75,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
+User=ec2-user
 WorkingDirectory=/opt/ai-service
 EnvironmentFile=/opt/ai-service.env
 Environment=PATH=/usr/bin:/usr/local/bin
