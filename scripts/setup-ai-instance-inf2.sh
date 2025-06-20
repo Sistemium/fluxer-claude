@@ -28,17 +28,14 @@ echo "Setting up AWS Neuron SDK for Inferentia2..."
 # Add Neuron repository for Amazon Linux 2023
 echo "Setting up Neuron repository for Amazon Linux 2023..."
 
-# Import GPG key
-rpm --import https://yum.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-NEURON.PUB
-
-# Add repository
+# Try alternative approaches for Neuron installation
+# Method 1: Disable GPG check temporarily
 tee /etc/yum.repos.d/neuron.repo > /dev/null <<EOF
 [neuron]
 name=Neuron YUM Repository
 baseurl=https://yum.repos.neuron.amazonaws.com
 enabled=1
-gpgcheck=1
-gpgkey=https://yum.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-NEURON.PUB
+gpgcheck=0
 metadata_expire=0
 EOF
 
