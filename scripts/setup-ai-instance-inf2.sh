@@ -4,10 +4,10 @@ set -e
 echo "=== Fluxer AI Instance Setup Script (Inferentia2 / inf2.xlarge) ==="
 echo "Starting setup at $(date)"
 
-# Update system and install essentials
+# Update system and install essentials (Amazon Linux 2023)
 echo "Updating system packages..."
-apt-get update -y
-apt-get install -y git curl python3 python3-pip awscli
+yum update -y
+yum install -y git curl python3 python3-pip awscli
 
 # Get HuggingFace token from AWS Secrets Manager
 SPOT_REGION="${SPOT_AWS_REGION:-eu-west-1}"
@@ -24,13 +24,18 @@ fi
 # Setup Neuron SDK for Inferentia2
 echo "Setting up AWS Neuron SDK for Inferentia2..."
 
-# Add Neuron repository
-echo "deb https://apt.repos.neuron.amazonaws.com jammy main" | tee /etc/apt/sources.list.d/neuron.list
-wget -qO - https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-NEURON.PUB | apt-key add -
-apt-get update -y
+# Add Neuron repository for Amazon Linux 2023
+echo "Setting up Neuron repository for Amazon Linux 2023..."
+tee /etc/yum.repos.d/neuron.repo > /dev/null <<EOF
+[neuron]
+name=Neuron YUM Repository
+baseurl=https://yum.repos.neuron.amazonaws.com
+enabled=1
+metadata_expire=0
+EOF
 
 # Install Neuron runtime and tools
-apt-get install -y aws-neuronx-runtime-lib aws-neuronx-tools
+yum install -y aws-neuronx-runtime-lib aws-neuronx-tools
 
 # Install Python packages for Neuron
 echo "Installing Neuron Python packages..."
