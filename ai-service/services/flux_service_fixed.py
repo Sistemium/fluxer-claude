@@ -55,8 +55,7 @@ class FluxService:
                             model_id,
                             torch_dtype=torch.bfloat16,
                             use_safetensors=True,
-                            low_cpu_mem_usage=True,
-                            device_map="auto"  # Автоматическое распределение по устройствам
+                            low_cpu_mem_usage=True
                         )
                         
                         # Включаем sequential CPU offload для экономии VRAM
