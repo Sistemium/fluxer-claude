@@ -48,35 +48,17 @@ class FluxService:
                             low_cpu_mem_usage=True
                         )
                     else:
-                        # Очистим CUDA кэш перед загрузкой
-                        torch.cuda.empty_cache()
+                        # Простая загрузка без лишних оптимизаций - как вчера работало
+                        self.pipeline = FluxPipeline.from_pretrained(
+                            model_id,
+                            torch_dtype=torch.bfloat16,
+                            use_safetensors=True,
+                            low_cpu_mem_usage=True
+                        )
+                        self.pipeline = self.pipeline.to("cuda")
                         
-                        # Пробуем float16 для экономии памяти, fallback на bfloat16
-                        try:
-                            self.pipeline = FluxPipeline.from_pretrained(
-                                model_id,
-                                torch_dtype=torch.float16,
-                                use_safetensors=True,
-                                low_cpu_mem_usage=True
-                            ).to("cuda")
-                        except Exception as e:
-                            logger.warning(f"Failed with float16, trying bfloat16: {e}")
-                            torch.cuda.empty_cache()
-                            self.pipeline = FluxPipeline.from_pretrained(
-                                model_id,
-                                torch_dtype=torch.bfloat16,
-                                use_safetensors=True,
-                                low_cpu_mem_usage=True
-                            ).to("cuda")
-                        
-                        # Только memory efficient attention, без медленного offloading
-                        try:
-                            self.pipeline.enable_xformers_memory_efficient_attention()
-                        except Exception as e:
-                            logger.warning(f"xformers not available: {e}")
-                            
-                        # Включаем model CPU offload только если нехватка памяти
-                        # self.pipeline.enable_model_cpu_offload()  # Закомментировано для скорости
+                        # НЕ используем xformers с FLUX - вызывает TypeError и UnboundLocalError
+                        # НЕ используем offload - вызывает OOM и медленную работу
                 else:
                     # Fallback to Stable Diffusion XL for development
                     from diffusers import StableDiffusionXLPipeline
