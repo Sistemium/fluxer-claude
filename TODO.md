@@ -102,6 +102,14 @@ BACKEND_URL=http://your-backend-url:3000
 - [ ] **Image editing** tools
 - [ ] **Prompt suggestions** & templates
 
+### Image Storage Optimization
+- [ ] **S3 Image Storage** - move generated images from base64 in EventBridge/MQTT to S3
+- [ ] **Remove base64 images** from EventBridge events (only send S3 URLs)
+- [ ] **Remove base64 images** from MQTT messages (only send S3 URLs) 
+- [ ] **Remove base64 images** from MongoDB storage (only store S3 URLs)
+- [ ] **S3 Bucket setup** for generated images with proper lifecycle policies
+- [ ] **Presigned URLs** for secure image access from frontend
+
 ## 📊 Metrics & Monitoring
 
 ### Current Status
@@ -122,24 +130,60 @@ BACKEND_URL=http://your-backend-url:3000
 
 1. ✅ **Test current SQS implementation** thoroughly
 2. ✅ **Fix remaining Jest test failures** 
-3. **Implement SpotInstanceService** class
-4. **Create Admin UI** for spot management
-5. **Deploy first spot instance** manually for testing
+3. ✅ **Implement SpotInstanceService** class  
+4. ✅ **Deploy first spot instance** manually for testing
+5. **Create Custom AMI** with pre-installed AI packages
+6. **Create Admin UI** for spot management
 
-## 📝 Notes
+## 📝 Session Notes (2025-06-19)
 
-### Architecture Decisions Made
-- **SQS over Redis** for queue → better for multi-region, spot instances
-- **MongoDB for job status** → persistent, queryable storage  
-- **HTTP API for AI service** → stateless, scalable
-- **WebSocket for real-time updates** → better UX than polling
+### ✅ Major Progress Made Today
+- **SpotInstanceService** implemented and working
+- **Deep Learning AMI** properly configured for eu-north-1
+- **User Data script** optimized for package installation
+- **AI Service** successfully running with GPU support
+- **FLUX.1-dev model** loading and working
 
-### Lessons Learned
-- **In-memory storage** not suitable for distributed systems
-- **TypeScript tests** need careful mock type handling
-- ✅ **AWS SDK v3** migration complete - cleaner API, better TypeScript support
-- **Spot instances** require different architecture than always-on servers
+### 🔥 Critical Issues Resolved
+1. **User Data size limit** - reduced from 16KB to ~4KB
+2. **CUDA runtime conflicts** - resolved PyTorch/xformers ABI issues  
+3. **Disk space problems** - optimized package installation paths
+4. **Wrong AMI region** - found correct Deep Learning AMI for eu-north-1
+5. **Instance store misconception** - learned snapshots impossible
+
+### 🛠 Current Configuration
+- **AMI**: `ami-0d272b151e3b29b0b` (Deep Learning OSS Nvidia Driver PyTorch 2.7 Ubuntu 22.04 eu-north-1)
+- **Disk Setup**: 45GB root EBS + 229GB instance store at `/opt/dlami/nvme`
+- **Package Strategy**: All packages installed to instance store to save root disk space
+- **CUDA**: Pre-configured on Deep Learning AMI
+- **Repository**: Code pulled from `Sistemium/fluxer-claude` GitHub repo
+
+### 🚨 Key Discovery: Instance Store Limitations
+- **Instance store cannot be snapshotted** - it's ephemeral per-host storage
+- **Only EBS volumes** can be snapshotted and reused
+- **Solution**: Create **Custom AMI** instead of disk snapshots
+
+### 🎯 Next Session Plan
+1. **Create Custom AMI** from current working instance:
+   ```bash
+   aws ec2 create-image --instance-id $(curl -s http://169.254.169.254/latest/meta-data/instance-id) --name "fluxer-ai-ready-$(date +%Y%m%d)"
+   ```
+2. **Test new instances** launching from custom AMI
+3. **Build Admin UI** for spot instance management  
+4. **Add auto-scaling** based on SQS queue depth
+
+### 💡 Architecture Insights
+- **Deep Learning AMI** = best foundation (drivers, PyTorch pre-installed)
+- **Instance store** = perfect for model cache, pip cache (229GB free)
+- **Custom AMI** = fastest deployment strategy for pre-configured environments
+- **EBS** = only for persistent data that needs snapshots
+
+### 📋 Working Instance Status
+- **AI Service**: Running and healthy ✅
+- **GPU**: CUDA working, PyTorch sees GPU ✅  
+- **FLUX Model**: Loaded and ready for generation ✅
+- **Packages**: All dependencies installed ✅
 
 ---
-*Last updated: 2025-06-19*
-*Status: AWS SDK v3 migration complete, ready for Spot Instance implementation*
+*Last updated: 2025-06-19 22:00*  
+*Status: Spot Instance service working, ready to create Custom AMI*
