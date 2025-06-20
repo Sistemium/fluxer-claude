@@ -75,6 +75,12 @@
 - AMI ID, токены, URL - только через переменные окружения
 - Код должен падать если обязательные переменные не установлены
 
+### AWS регионы
+- **Основная инфраструктура**: AWS_REGION (eu-west-1) - SQS, Secrets Manager, EventBridge
+- **AI Spot инстансы**: SPOT_AWS_REGION (eu-north-1) - inf2.xlarge доступны, дешевле
+- AMI нужно искать в SPOT_AWS_REGION, а не в основном регионе
+- Текущий AMI: ami-07f1c2e1718395c38 (Deep Learning AMI Neuron PyTorch 2.6 Ubuntu 22.04)
+
 ### Git vs S3 для кода
 - Git лучше для кода AI сервиса (version control)
 - S3 лучше для готовых изображений (не base64 в MongoDB/EventBridge)
