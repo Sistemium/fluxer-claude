@@ -53,8 +53,8 @@ export class SpotInstanceService {
     const securityGroupIds = (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean)
     
     this.config = {
-      imageId: process.env.SPOT_AMI_ID || 'ami-0d272b151e3b29b0b', // Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.7 (Ubuntu 22.04) eu-north-1
-      instanceType: process.env.SPOT_INSTANCE_TYPE || 'g5.xlarge',
+      imageId: process.env.SPOT_AMI_ID || 'ami-0b540c6cb0b6ea9e5', // AL2023 Neuron AMI for inf2.xlarge (eu-north-1)
+      instanceType: process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge',
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
       securityGroupIds,
       ...(subnetId && { subnetId }),
@@ -215,11 +215,20 @@ export SQS_QUEUE_URL="${process.env.SQS_QUEUE_URL || ''}"
 export GITHUB_REPO="${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}"
 
 # Download and run setup script from GitHub
-echo "Downloading setup script from GitHub..."
-curl -fsSL https://raw.githubusercontent.com/\${GITHUB_REPO}/main/scripts/setup-ai-instance.sh -o /tmp/setup-ai-instance.sh
+# Choose script based on instance type
+INSTANCE_TYPE="${process.env.SPOT_INSTANCE_TYPE || 'inf2.xlarge'}"
+if [[ "\$INSTANCE_TYPE" == inf2* ]]; then
+    SETUP_SCRIPT="setup-ai-instance-inf2.sh"
+    echo "Downloading Inferentia2 setup script from GitHub..."
+else
+    SETUP_SCRIPT="setup-ai-instance.sh"
+    echo "Downloading GPU setup script from GitHub..."
+fi
+
+curl -fsSL https://raw.githubusercontent.com/\${GITHUB_REPO}/main/scripts/\$SETUP_SCRIPT -o /tmp/setup-ai-instance.sh
 chmod +x /tmp/setup-ai-instance.sh
 
-echo "Running setup script..."
+echo "Running setup script for \$INSTANCE_TYPE..."
 /tmp/setup-ai-instance.sh
 
 echo "Instance setup completed!"
