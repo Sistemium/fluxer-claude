@@ -267,7 +267,7 @@ echo "Instance setup completed!"
             {
               DeviceName: '/dev/sda1', // Root device for AMI
               Ebs: {
-                VolumeSize: 20, // GB - OS and FLUX model (24GB) 
+                VolumeSize: 100, // GB - OS and FLUX model (24GB) 
                 VolumeType: 'gp3',
                 DeleteOnTermination: true
               }
