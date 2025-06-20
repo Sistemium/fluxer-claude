@@ -145,19 +145,30 @@ EOF
 echo "Creating systemd service..."
 if [ -n "$PYTHON_BASE" ]; then
     if [ "$PYTHON_TYPE" = "conda" ]; then
-        # For conda, use activation script
-        PYTHON_PATH="$PYTHON_BASE/bin/python"
-        PATH_ENV="$PYTHON_BASE/bin:/usr/bin:/usr/local/bin"
-        CONDA_ACTIVATE="source $PYTHON_BASE/etc/profile.d/conda.sh && conda activate pytorch || conda activate py310 || conda activate base"
+        # For conda, create wrapper script that properly activates environment
+        cat << EOF > /opt/ai-service-start.sh
+#!/bin/bash
+source $PYTHON_BASE/etc/profile.d/conda.sh
+if conda env list | grep -q pytorch; then
+    conda activate pytorch
+elif conda env list | grep -q py310; then
+    conda activate py310
+else
+    conda activate base
+fi
+cd /opt/ai-service
+exec python main.py
+EOF
+        chmod +x /opt/ai-service-start.sh
+        EXEC_START="/opt/ai-service-start.sh"
+        PATH_ENV="/opt/conda/bin:/usr/bin:/usr/local/bin"
     else
-        PYTHON_PATH="$PYTHON_BASE/bin/python"
+        EXEC_START="$PYTHON_BASE/bin/python main.py"
         PATH_ENV="$PYTHON_BASE/bin:/usr/bin:/usr/local/bin"
-        CONDA_ACTIVATE=""
     fi
 else
-    PYTHON_PATH="/usr/bin/python3"
+    EXEC_START="/usr/bin/python3 main.py"
     PATH_ENV="/usr/bin:/usr/local/bin"
-    CONDA_ACTIVATE=""
 fi
 
 cat << EOF > /etc/systemd/system/ai-service.service
@@ -171,7 +182,7 @@ User=ubuntu
 WorkingDirectory=/opt/ai-service
 EnvironmentFile=/opt/ai-service.env
 Environment=PATH=$PATH_ENV
-ExecStart=/bin/bash -c '$CONDA_ACTIVATE && $PYTHON_PATH main.py'
+ExecStart=$EXEC_START
 Restart=always
 RestartSec=10
 
