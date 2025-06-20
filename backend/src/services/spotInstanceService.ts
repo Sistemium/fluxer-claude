@@ -227,7 +227,7 @@ set -e
 
 # Set environment variables for setup script
 export SPOT_AWS_REGION="${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}"
-export AWS_REGION="${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}"
+export AWS_REGION="${process.env.AWS_REGION || 'eu-west-1'}"
 export BACKEND_URL="${process.env.BACKEND_URL || 'http://localhost:3000'}"
 export SQS_QUEUE_URL="${process.env.SQS_QUEUE_URL || ''}"
 export GITHUB_REPO="${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}"

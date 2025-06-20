@@ -10,11 +10,22 @@ apt-get update -y
 apt-get install -y git curl python3 python3-pip awscli
 
 # Get HuggingFace token from AWS Secrets Manager  
-# Token is stored in main infrastructure region (eu-west-1), not spot region
+# Try spot region first, then fallback to main infrastructure region
+SPOT_REGION="${SPOT_AWS_REGION:-us-east-1}"
 MAIN_REGION="${AWS_REGION:-eu-west-1}"
-echo "Retrieving HuggingFace token from AWS Secrets Manager in region $MAIN_REGION..."
+echo "Retrieving HuggingFace token from AWS Secrets Manager..."
 HF_TOKEN=""
-if aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$MAIN_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
+
+# Try spot region first
+if aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$SPOT_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
+    echo "Found token in spot region $SPOT_REGION"
+elif aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$MAIN_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
+    echo "Found token in main region $MAIN_REGION"
+else
+    echo "Warning: Could not retrieve HuggingFace token from either region"
+fi
+
+if [ -f /tmp/hf_token.json ]; then
     HF_TOKEN=$(cat /tmp/hf_token.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")
     echo "HuggingFace token retrieved successfully"
     rm -f /tmp/hf_token.json
