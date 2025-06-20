@@ -48,7 +48,8 @@
 ### Instance Store vs EBS
 - Instance Store НЕЛЬЗЯ снапшотить (эфемерный)
 - Только EBS тома можно снапшотить
-- inf2 имеет NVMe диски для моделей
+- **inf2.xlarge НЕ ИМЕЕТ** эфемерного хранилища - только EBS
+- Все модели хранятся на корневом EBS диске (80GB)
 
 ### HuggingFace кэш
 - По умолчанию: ~/.cache/huggingface/

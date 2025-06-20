@@ -21,27 +21,24 @@ else
     echo "Warning: Could not retrieve HuggingFace token from Secrets Manager"
 fi
 
-# Check if Neuron SDK is already installed (Deep Learning AMI Neuron)
+# Check Neuron SDK (should be pre-installed in Deep Learning AMI Neuron)
 echo "Checking AWS Neuron SDK for Ubuntu..."
 if command -v neuron-ls >/dev/null 2>&1; then
-    echo "Neuron SDK already installed"
+    echo "✅ Neuron SDK already installed"
     neuron-ls || true
 else
-    echo "Installing AWS Neuron SDK for Ubuntu..."
-    # Add Neuron repository for Ubuntu 22.04 (jammy)
-    curl -fsSL https://apt.repos.neuron.amazonaws.com/GPG-PUB-KEY-AMAZON-NEURON.PUB | apt-key add -
-    echo "deb https://apt.repos.neuron.amazonaws.com jammy main" > /etc/apt/sources.list.d/neuron.list
-    apt-get update -y
-    
-    # Install Neuron packages for inf2
-    echo "Installing Neuron runtime and tools..."
-    apt-get install -y aws-neuronx-runtime-lib aws-neuronx-tools
+    echo "❌ Neuron SDK not found - this should not happen with Deep Learning AMI Neuron"
+    echo "Continuing without manual Neuron installation..."
 fi
 
-# Install Python packages for Neuron
-echo "Installing Neuron Python packages from official Neuron repository..."
-# Use official Neuron pip repository  
-pip3 install --extra-index-url=https://pip.repos.neuron.amazonaws.com neuronx-cc torch-neuronx transformers
+# Check if torch-neuronx is already available (Deep Learning AMI should have it)
+echo "Checking torch-neuronx availability..."
+if python3 -c "import torch_neuronx; print('✅ torch-neuronx already available')" 2>/dev/null; then
+    echo "torch-neuronx is pre-installed"
+else
+    echo "Installing torch-neuronx from Neuron repository..."
+    pip3 install --extra-index-url=https://pip.repos.neuron.amazonaws.com torch-neuronx transformers
+fi
 
 # Install AI packages 
 echo "Installing AI packages..."
@@ -53,10 +50,10 @@ pip3 install diffusers fastapi uvicorn \
 echo "Testing accelerate compatibility with torch-neuronx..."
 if python3 -c "import torch_neuronx; print('torch-neuronx OK')" 2>/dev/null; then
     if python3 -c "import torch_neuronx; import accelerate; print('accelerate + torch-neuronx OK')" 2>/dev/null; then
-        echo "accelerate is compatible with torch-neuronx"
+        echo "✅ accelerate is compatible with torch-neuronx"
         pip3 install accelerate
     else
-        echo "accelerate conflicts with torch-neuronx, skipping installation"
+        echo "⚠️  accelerate conflicts with torch-neuronx, skipping installation"
     fi
 else
     echo "torch-neuronx not available, installing accelerate"
@@ -65,7 +62,7 @@ fi
 
 echo "Neuron SDK and AI packages installed successfully"
 
-# Create directories for models and cache
+# Create directories for models and cache on root EBS (inf2.xlarge has no instance store)
 mkdir -p /opt/neuron/models
 mkdir -p /opt/neuron/cache
 chown -R ubuntu:ubuntu /opt/neuron
