@@ -143,33 +143,7 @@ async def health_check():
         gpu_available = torch.cuda.is_available()
         gpu_count = torch.cuda.device_count() if gpu_available else 0
         
-        # Check Neuron availability
-        neuron_available = False
-        neuron_devices = 0
-        device_type = os.getenv("DEVICE_TYPE", "auto")
-        
-        if device_type == "neuron":
-            try:
-                import torch_neuronx
-                # Try to get Neuron device info
-                import subprocess
-                result = subprocess.run(['neuron-ls'], capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    neuron_available = True
-                    # Count Neuron cores from neuron-ls output
-                    lines = result.stdout.strip().split('\n')
-                    neuron_devices = len([line for line in lines if 'NeuronCore' in line or 'inf2' in line.lower()])
-                    if neuron_devices == 0 and 'neuron' in result.stdout.lower():
-                        neuron_devices = 1  # At least one device if neuron-ls succeeds
-            except:
-                pass
-        
-        # Determine primary device
-        if neuron_available:
-            device = "neuron"
-            compute_available = True
-            compute_count = neuron_devices
-        elif gpu_available:
+        if gpu_available:
             device = "cuda" 
             compute_available = True
             compute_count = gpu_count
@@ -187,8 +161,6 @@ async def health_check():
             "device": device,
             "gpu_available": gpu_available,
             "gpu_count": gpu_count,
-            "neuron_available": neuron_available,
-            "neuron_devices": neuron_devices,
             "compute_available": compute_available,
             "compute_count": compute_count,
             "model_loaded": flux_service is not None and flux_service.is_loaded,
