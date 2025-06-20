@@ -53,7 +53,7 @@ export class SpotInstanceService {
     const securityGroupIds = (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean)
     
     this.config = {
-      imageId: process.env.SPOT_AMI_ID || 'ami-0d272b151e3b29b0b', // Deep Learning OSS Nvidia Driver
+      imageId: process.env.SPOT_AMI_ID || 'ami-0d272b151e3b29b0b', // Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.7 (Ubuntu 22.04) eu-north-1
       instanceType: process.env.SPOT_INSTANCE_TYPE || 'g5.xlarge',
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
       securityGroupIds,
@@ -203,159 +203,26 @@ export class SpotInstanceService {
   }
 
   private generateUserData(): string {
-    // Minimal startup script - code from Git, models from snapshot/ephemeral disk
+    // Download and run setup script from Git repo
     const script = `#!/bin/bash
 set -e
 
-# Update system and install essentials
-apt-get update -y
-apt-get install -y git curl python3 python3-pip awscli
+# Set environment variables for setup script
+export SPOT_AWS_REGION="${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}"
+export AWS_REGION="${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}"
+export BACKEND_URL="${process.env.BACKEND_URL || 'http://localhost:3000'}"
+export SQS_QUEUE_URL="${process.env.SQS_QUEUE_URL || ''}"
+export GITHUB_REPO="${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}"
 
-# Find CUDA libraries (AMI already has NVIDIA drivers)
-CUDA_FILE=$(find /usr -name "libcudart.so*" 2>/dev/null | head -n1)
-if [ -n "$CUDA_FILE" ]; then
-    CUDA_LIB_PATH=$(dirname "$CUDA_FILE")
-else
-    CUDA_LIB_PATH="/usr/lib/x86_64-linux-gnu"
-fi
-echo "Found CUDA libraries at: $CUDA_LIB_PATH"
+# Download and run setup script from GitHub
+echo "Downloading setup script from GitHub..."
+curl -fsSL https://raw.githubusercontent.com/\${GITHUB_REPO}/main/scripts/setup-ai-instance.sh -o /tmp/setup-ai-instance.sh
+chmod +x /tmp/setup-ai-instance.sh
 
-# Also check common NVIDIA library paths
-for path in /usr/lib/x86_64-linux-gnu /usr/local/cuda*/lib64 /opt/nvidia/lib64; do
-    if [ -f "$path/libcudart.so" ]; then
-        CUDA_LIB_PATH="$path:$CUDA_LIB_PATH"
-        echo "Added CUDA path: $path"
-    fi
-done
+echo "Running setup script..."
+/tmp/setup-ai-instance.sh
 
-# Get HuggingFace token from AWS Secrets Manager
-SPOT_REGION="${process.env.SPOT_AWS_REGION || 'eu-west-1'}"
-HF_TOKEN=""
-if aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$SPOT_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
-    HF_TOKEN=$(cat /tmp/hf_token.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")
-    rm -f /tmp/hf_token.json
-fi
-
-# Setup instance store for ML models (229GB free ephemeral storage)
-# Find instance store device
-INSTANCE_STORE=""
-for device in /dev/nvme2n1 /dev/nvme3n1 /dev/xvdb /dev/sdb /dev/nvme1n1; do
-    if [ -b "$device" ]; then
-        INSTANCE_STORE="$device"
-        echo "Found instance store at: $device"
-        break
-    fi
-done
-
-if [ -n "$INSTANCE_STORE" ]; then
-    mkdir -p /mnt/instance-store
-    mount "$INSTANCE_STORE" /mnt/instance-store 2>/dev/null || {
-        echo "Formatting instance store..."
-        mkfs.ext4 "$INSTANCE_STORE"
-        mount "$INSTANCE_STORE" /mnt/instance-store
-    }
-    
-    # Create ML directories with proper permissions
-    mkdir -p /mnt/instance-store/python
-    mkdir -p /mnt/instance-store/huggingface  
-    mkdir -p /mnt/instance-store/torch-cache
-    mkdir -p /mnt/instance-store/pip-cache
-    
-    # Set ownership before pip install
-    chown -R ubuntu:ubuntu /mnt/instance-store
-    chmod -R 755 /mnt/instance-store
-    
-    echo "Instance store mounted - 229GB available, installing Python deps as ubuntu user..."
-    
-    # Set temp directory to instance store to avoid filling up root disk
-    mkdir -p /mnt/instance-store/tmp
-    chown ubuntu:ubuntu /mnt/instance-store/tmp
-    
-    # Install Python packages in stages to handle dependencies
-    echo "Step 1: Installing torch first..."
-    sudo -u ubuntu TMPDIR=/mnt/instance-store/tmp \
-        PIP_BUILD_DIR=/mnt/instance-store/tmp/pip-build \
-        pip3 install \
-        --target /mnt/instance-store/python \
-        --cache-dir /mnt/instance-store/pip-cache \
-        --index-url https://download.pytorch.org/whl/cu118 \
-        torch torchvision
-    
-    echo "Step 2: Installing other packages..."
-    sudo -u ubuntu TMPDIR=/mnt/instance-store/tmp \
-        PIP_BUILD_DIR=/mnt/instance-store/tmp/pip-build \
-        PYTHONPATH=/mnt/instance-store/python \
-        pip3 install \
-        --target /mnt/instance-store/python \
-        --cache-dir /mnt/instance-store/pip-cache \
-        --extra-index-url https://pypi.org/simple \
-        fastapi uvicorn diffusers transformers accelerate \
-        safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
-        sentencepiece python-dotenv
-    
-    echo "Step 3: Installing xformers (needs torch in path)..."
-    sudo -u ubuntu TMPDIR=/mnt/instance-store/tmp \
-        PIP_BUILD_DIR=/mnt/instance-store/tmp/pip-build \
-        PYTHONPATH=/mnt/instance-store/python \
-        pip3 install \
-        --target /mnt/instance-store/python \
-        --cache-dir /mnt/instance-store/pip-cache \
-        --extra-index-url https://pypi.org/simple \
-        xformers || echo "xformers install failed, continuing without it"
-    
-    echo "Python dependencies installed to instance store"
-else
-    echo "Warning: Instance store not found, installing to system"
-    pip3 install fastapi uvicorn torch torchvision diffusers transformers accelerate \
-        safetensors pillow requests boto3 paho-mqtt huggingface_hub protobuf \
-        sentencepiece xformers
-fi
-
-# Clone AI service code from Git
-cd /opt
-git clone https://github.com/${process.env.GITHUB_REPO || 'Sistemium/fluxer-claude'}.git ai-service-repo
-cp -r ai-service-repo/ai-service /opt/ai-service || mkdir -p /opt/ai-service
-cd /opt/ai-service
-
-# Set up environment with dynamic CUDA path
-cat << EOF > /opt/ai-service.env
-AWS_REGION=${process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'eu-west-1'}
-BACKEND_URL=${process.env.BACKEND_URL || 'http://localhost:3000'}
-SQS_QUEUE_URL=${process.env.SQS_QUEUE_URL || ''}
-HUGGINGFACE_TOKEN=\$HF_TOKEN
-PYTHONPATH=/mnt/instance-store/python:\$PYTHONPATH
-HUGGINGFACE_HUB_CACHE=/mnt/instance-store/huggingface
-TORCH_HOME=/mnt/instance-store/torch-cache
-CUDA_VISIBLE_DEVICES=0
-LD_LIBRARY_PATH=\$CUDA_LIB_PATH:\$LD_LIBRARY_PATH
-EOF
-
-# Create systemd service with dynamic CUDA environment
-cat << EOF > /etc/systemd/system/ai-service.service
-[Unit]
-Description=Fluxer AI Service
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/opt/ai-service
-EnvironmentFile=/opt/ai-service.env
-Environment=LD_LIBRARY_PATH=\$CUDA_LIB_PATH
-ExecStart=/usr/bin/python3 main.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Start service
-systemctl daemon-reload
-systemctl enable ai-service
-systemctl start ai-service
-
-echo "AI service started from Git repo"
+echo "Instance setup completed!"
 `
 
     return Buffer.from(script).toString('base64')
@@ -391,7 +258,7 @@ echo "AI service started from Git repo"
             {
               DeviceName: '/dev/sda1', // Root device for AMI
               Ebs: {
-                VolumeSize: 15, // GB - just OS and basic tools 
+                VolumeSize: 100, // GB - just OS and basic tools 
                 VolumeType: 'gp3',
                 DeleteOnTermination: true
               }
