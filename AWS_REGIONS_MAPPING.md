@@ -4,6 +4,7 @@
 
 | Регион | AMI ID | Subnet ID | Security Group | Spot Цена g6e.xlarge | Статус |
 |--------|--------|-----------|----------------|---------------------|--------|
+| **us-east-1** | `ami-065386a957bcd26d5` | `subnet-0682a4d647765a777` | `sg-022bb98a233e62310` | $0.74/час | 🔥 Лучший выбор |
 | **eu-central-1** | `ami-0f79e56a397d891ea` | `subnet-4946a720` | `sg-0a1780cb65e71f7b2` | $0.71/час | ✅ Текущий |
 | **eu-west-1** | `ami-0b8e87449cf49f945` | `❓ subnet-XXXXXXXXX` | `❓ sg-XXXXXXXXX` | ❌ Недоступно | ❌ g6e недоступны |
 | **eu-north-1** | `ami-0f27a45026f780e63` | `❓ subnet-XXXXXXXXX` | `❓ sg-XXXXXXXXX` | $1.11/час | ✅ Доступен |
@@ -61,6 +62,16 @@ aws ec2 describe-availability-zones --region eu-central-1
 ## Быстрое переключение региона
 
 ### .env.local конфигурации
+
+#### 🔥 us-east-1 (N. Virginia) - рекомендуемый ($0.74/час)
+```bash
+SPOT_AWS_REGION=us-east-1
+SPOT_AMI_ID=ami-065386a957bcd26d5
+SPOT_INSTANCE_TYPE=g6e.2xlarge
+AWS_SUBNET_ID=subnet-0682a4d647765a777
+AWS_SECURITY_GROUP_ID=sg-022bb98a233e62310
+SPOT_MAX_PRICE=1.20
+```
 
 #### ✅ eu-central-1 (Frankfurt) - текущая ($0.71/час)
 ```bash
