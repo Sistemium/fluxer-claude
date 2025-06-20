@@ -9,11 +9,12 @@ echo "Updating system packages..."
 apt-get update -y
 apt-get install -y git curl python3 python3-pip awscli
 
-# Get HuggingFace token from AWS Secrets Manager
-SPOT_REGION="${SPOT_AWS_REGION:-eu-west-1}"
-echo "Retrieving HuggingFace token from AWS Secrets Manager in region $SPOT_REGION..."
+# Get HuggingFace token from AWS Secrets Manager  
+# Token is stored in main infrastructure region (eu-west-1), not spot region
+MAIN_REGION="${AWS_REGION:-eu-west-1}"
+echo "Retrieving HuggingFace token from AWS Secrets Manager in region $MAIN_REGION..."
 HF_TOKEN=""
-if aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$SPOT_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
+if aws secretsmanager get-secret-value --secret-id "fluxer/huggingface-token" --region "$MAIN_REGION" --query SecretString --output text > /tmp/hf_token.json 2>/dev/null; then
     HF_TOKEN=$(cat /tmp/hf_token.json | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', ''))")
     echo "HuggingFace token retrieved successfully"
     rm -f /tmp/hf_token.json
