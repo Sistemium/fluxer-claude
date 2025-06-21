@@ -31,7 +31,11 @@
       
       <v-card-actions class="justify-center pa-4 black">
         <div class="text-center">
-          <div class="text-body-1 white--text mb-2">{{ image.prompt }}</div>
+          <CopyableText 
+            :text="image.prompt" 
+            text-class="text-body-1 white--text mb-2"
+            icon-color="black"
+          />
           <div class="text-caption grey--text">{{ formatDate(image.createdAt) }}</div>
         </div>
       </v-card-actions>
@@ -40,6 +44,8 @@
 </template>
 
 <script setup lang="ts">
+import CopyableText from './CopyableText.vue'
+
 interface ImageType {
   id: string
   imageUrl: string
