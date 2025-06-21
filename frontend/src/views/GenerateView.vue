@@ -14,6 +14,26 @@
                 variant="outlined"
                 :disabled="imagesStore.isGenerating"
               ></v-textarea>
+              
+              <!-- Token Counter -->
+              <div class="text-caption mt-2 mb-4">
+                <v-chip 
+                  :color="tokenCount > 77 ? 'error' : tokenCount > 60 ? 'warning' : 'success'"
+                  size="small"
+                  class="mr-2"
+                >
+                  <v-icon left size="small">mdi-counter</v-icon>
+                  {{ tokenCount }} / 77 tokens
+                </v-chip>
+                <span class="text-grey-darken-1">
+                  <template v-if="tokenCount <= 77">
+                    ✓ Optimal for CLIP encoder
+                  </template>
+                  <template v-else>
+                    ⚠ Exceeds CLIP limit ({{ tokenCount - 77 }} tokens will be ignored)
+                  </template>
+                </span>
+              </div>
 
               <v-row class="mt-4">
                 <v-col cols="6">
@@ -146,7 +166,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useImagesStore } from '@/stores/images'
 
@@ -160,14 +180,39 @@ const router = useRouter()
 const imagesStore = useImagesStore()
 
 const prompt = ref('')
-const width = ref(512)
-const height = ref(512)
-const guidance_scale = ref(7.5)
-const num_inference_steps = ref(50)
+const width = ref(Number(import.meta.env.VITE_DEFAULT_WIDTH) || 512)
+const height = ref(Number(import.meta.env.VITE_DEFAULT_HEIGHT) || 512)
+const guidance_scale = ref(Number(import.meta.env.VITE_DEFAULT_GUIDANCE_SCALE) || 7.5)
+const num_inference_steps = ref(Number(import.meta.env.VITE_DEFAULT_NUM_INFERENCE_STEPS) || 50)
 const generatedImage = ref<string | null>(null)
 const isRestoredSession = ref(false)
 
 const dimensions = [256, 512, 768, 1024]
+
+// Simple token counter (approximation for CLIP)
+// CLIP tokenizer splits on spaces and punctuation, so this is a rough estimate
+const tokenCount = computed(() => {
+  if (!prompt.value) return 0
+  
+  // Split by spaces and common punctuation, filter empty strings
+  const words = prompt.value
+    .toLowerCase()
+    .split(/[\s\.,;:!?\-\(\)\[\]"']+/)
+    .filter(word => word.length > 0)
+  
+  // Estimate tokens - most words = 1 token, some compound words = 2 tokens
+  // This is a simplified approximation since real CLIP tokenizer is more complex
+  let tokenEstimate = 0
+  words.forEach(word => {
+    if (word.length > 8) {
+      tokenEstimate += 2 // Long words often split into 2 tokens
+    } else {
+      tokenEstimate += 1
+    }
+  })
+  
+  return tokenEstimate
+})
 
 async function generateImage () {
   if (!prompt.value.trim()) return
