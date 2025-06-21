@@ -28,6 +28,13 @@ class FluxService:
             
             logger.info(f"Loading {self.model_id} model on {self.device}...")
             
+            # Temporarily suppress verbose library logging during model loading
+            original_levels = {}
+            for lib_name in ["transformers", "diffusers", "accelerate", "torch", "huggingface_hub"]:
+                lib_logger = logging.getLogger(lib_name)
+                original_levels[lib_name] = lib_logger.level
+                lib_logger.setLevel(logging.ERROR)
+            
             # Load the pipeline
             model_id = self.model_id
             
@@ -79,6 +86,11 @@ class FluxService:
                 self.pipeline.enable_model_cpu_offload()
             
             self.is_loaded = True
+            
+            # Restore original logging levels
+            for lib_name, original_level in original_levels.items():
+                logging.getLogger(lib_name).setLevel(original_level)
+            
             logger.info(f"{self.model_id} model loaded successfully")
             return True
             
@@ -96,6 +108,13 @@ class FluxService:
                 login(token=hf_token)
             
             logger.info(f"Loading {self.model_id} model on {self.device}...")
+            
+            # Temporarily suppress verbose library logging during model loading
+            original_levels = {}
+            for lib_name in ["transformers", "diffusers", "accelerate", "torch", "huggingface_hub"]:
+                lib_logger = logging.getLogger(lib_name)
+                original_levels[lib_name] = lib_logger.level
+                lib_logger.setLevel(logging.ERROR)
             
             # Load the pipeline
             model_id = self.model_id
@@ -150,6 +169,11 @@ class FluxService:
                     self.pipeline.enable_model_cpu_offload()
             
             self.is_loaded = True
+            
+            # Restore original logging levels
+            for lib_name, original_level in original_levels.items():
+                logging.getLogger(lib_name).setLevel(original_level)
+            
             logger.info(f"{self.model_id} model loaded successfully")
             return True
             

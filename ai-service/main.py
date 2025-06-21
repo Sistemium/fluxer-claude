@@ -24,6 +24,17 @@ from models.generation_request import GenerationRequest, GenerationResponse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Suppress verbose logging from libraries during model loading
+def suppress_model_loading_logs():
+    """Suppress verbose logging from transformers, diffusers etc during model loading"""
+    logging.getLogger("transformers").setLevel(logging.WARNING)
+    logging.getLogger("diffusers").setLevel(logging.WARNING)
+    logging.getLogger("accelerate").setLevel(logging.WARNING)
+    logging.getLogger("torch").setLevel(logging.WARNING)
+    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+
+suppress_model_loading_logs()
+
 # Global variables
 flux_service: Optional[FluxService] = None
 
