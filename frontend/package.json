@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mdi/font": "^7.3.67",
+    "@vueuse/core": "^13.4.0",
     "axios": "^1.6.0",
     "dotenv-flow": "^4.1.0",
     "pinia": "^2.1.7",
