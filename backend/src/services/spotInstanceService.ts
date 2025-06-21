@@ -57,7 +57,7 @@ export class SpotInstanceService {
     // Initialize with fallback configuration - will be updated from DB
     this.config = {
       imageId: process.env.SPOT_AMI_ID || 'ami-0866a3c8686eaeeba', // Fallback AMI
-      instanceType: process.env.SPOT_INSTANCE_TYPE || 'g6e.xlarge',
+      instanceType: process.env.SPOT_INSTANCE_TYPE || 'g6e.2xlarge',
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
       securityGroupIds: (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean),
       maxPrice: process.env.SPOT_MAX_PRICE || '0.50',
@@ -114,7 +114,7 @@ export class SpotInstanceService {
       // Update configuration from database
       this.config = {
         imageId: defaultRegion.amiId,
-        instanceType: defaultRegion.instanceTypes[0] || 'g6e.xlarge', // Use first available instance type
+        instanceType: process.env.SPOT_INSTANCE_TYPE || 'g6e.2xlarge',
         keyName: process.env.AWS_KEY_PAIR_NAME as string, // Still from env
         securityGroupIds: defaultRegion.securityGroupIds,
         maxPrice: defaultRegion.spotPrice.toString(),
@@ -139,14 +139,15 @@ export class SpotInstanceService {
   }
 
   private startPeriodicRefresh(): void {
-    // Refresh instance status every 2 minutes
+    // Reduced frequency since we now have EventBridge events
+    // Refresh instance status every 10 minutes (backup to events)
     setInterval(async () => {
       try {
         await this.refreshInstanceStatus()
       } catch (error) {
         logger.error('Error during periodic instance refresh', error)
       }
-    }, 120000) // 2 minutes
+    }, 600000) // 10 minutes
   }
 
   private async refreshInstanceStatus(): Promise<void> {
@@ -405,7 +406,7 @@ echo "Instance setup completed!"
   async launchSpotFleet(): Promise<SpotInstanceInfo> {
     try {
       logger.info('Launching spot fleet', { 
-        instanceTypes: [this.config.instanceType, 'g6e.xlarge'], // Fallback types
+        instanceTypes: [this.config.instanceType, 'g6e.2xlarge'], // Fallback types
         maxPrice: this.config.maxPrice,
         imageId: this.config.imageId,
         keyName: this.config.keyName,
@@ -441,27 +442,6 @@ echo "Instance setup completed!"
                 }
               ]
             },
-            // Fallback instance type
-            {
-              ImageId: this.config.imageId,
-              InstanceType: 'g6e.xlarge' as any,
-              KeyName: this.config.keyName,
-              SecurityGroups: this.config.securityGroupIds.map(id => ({ GroupId: id })),
-              UserData: this.config.userData,
-              IamInstanceProfile: {
-                Name: process.env.SPOT_IAM_INSTANCE_PROFILE || 'ai-service-role'
-              },
-              BlockDeviceMappings: [
-                {
-                  DeviceName: '/dev/sda1',
-                  Ebs: {
-                    VolumeSize: 100,
-                    VolumeType: 'gp3' as const,
-                    DeleteOnTermination: true
-                  }
-                }
-              ]
-            }
           ]
         }
       }
@@ -564,7 +544,7 @@ echo "Instance setup completed!"
           const instancesCommand = new DescribeInstancesCommand({
             Filters: [
               {
-                Name: 'spot-fleet-request-id',
+                Name: 'tag:aws:ec2spot:fleet-request-id',
                 Values: [spotFleetId]
               },
               {
