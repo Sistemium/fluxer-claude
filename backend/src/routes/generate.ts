@@ -7,7 +7,7 @@ import { verifySession } from 'supertokens-node/recipe/session/framework/koa/ind
 export const generateRoutes = new Router()
 
 const generateSchema = Joi.object({
-  prompt: Joi.string().required().min(1).max(1000),
+  prompt: Joi.string().required().min(1).max(3000),
   width: Joi.number().valid(256, 512, 768, 1024).default(512),
   height: Joi.number().valid(256, 512, 768, 1024).default(512),
   guidance_scale: Joi.number().min(1).max(20).default(7.5),
