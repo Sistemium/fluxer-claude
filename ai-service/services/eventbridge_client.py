@@ -92,6 +92,16 @@ def send_progress_update(job_id: str, user_id: str, progress: int, message: str)
     except Exception as e:
         logger.error(f"Error in send_progress_update: {e}")
 
+def send_lifecycle_event(detail_type: str, detail: dict) -> None:
+    """Convenience function to send AI service lifecycle events"""
+    try:
+        client = get_eventbridge_client()
+        success = client._send_event(detail_type, detail)
+        if not success:
+            logger.warning(f"Failed to send lifecycle event: {detail_type}")
+    except Exception as e:
+        logger.error(f"Error in send_lifecycle_event: {e}")
+
 def send_completion_update(job_id: str, user_id: str) -> None:
     """Convenience function to send completion update (without image data)"""
     try:

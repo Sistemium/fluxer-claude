@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from services.flux_service import FluxService
-from services.eventbridge_client import send_progress_update as eb_send_progress, send_completion_update as eb_send_completion, send_error_update as eb_send_error
+from services.eventbridge_client import send_lifecycle_event as eb_send_lifecycle, send_completion_update as eb_send_completion, send_error_update as eb_send_error
 from services.mqtt_client import send_progress_update, send_completion_update, send_error_update, cleanup_mqtt
 from services.instance_monitor import get_instance_monitor
 from models.generation_request import GenerationRequest, GenerationResponse
@@ -33,9 +33,8 @@ async def send_service_event(event_type: str, data: dict):
         # Send via EventBridge only (lifecycle events don't need MQTT progress format)
         await asyncio.get_event_loop().run_in_executor(
             None, 
-            eb_send_progress, 
-            "ai-service-lifecycle", 
-            event_type, 
+            eb_send_lifecycle, 
+            f"AI Service {event_type.replace('_', ' ').title()}", 
             data
         )
         
