@@ -14,33 +14,40 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 export APT_GET_TIMEOUT=30
 
-# Wait for cloud-init with timeout
-echo "Waiting for cloud-init to finish (max 120 seconds)..."
-timeout 30 cloud-init status --wait 2>/dev/null || {
-    echo "Cloud-init wait timed out or not available, continuing..."
-    # Kill any stuck cloud-init processes
-    pkill -f cloud-init || true
-    sleep 5
-}
+# Check system readiness without waiting for cloud-init
+echo "Checking system readiness..."
+if pgrep -f cloud-init > /dev/null; then
+    echo "Cloud-init is still running in background, but proceeding with setup..."
+else
+    echo "Cloud-init appears to be finished"
+fi
 
-# Wait for unattended-upgrades to finish with timeout
-echo "Waiting for package managers to finish (max 300 seconds)..."
+# Ensure basic system commands are available
+if ! command -v apt-get >/dev/null 2>&1; then
+    echo "ERROR: apt-get not available, system may not be ready"
+    exit 1
+fi
+
+echo "System appears ready for setup"
+
+# Wait for package managers to finish with shorter timeout
+echo "Waiting for package managers to finish (max 120 seconds)..."
 WAIT_COUNT=0
-MAX_WAIT=30 # 30 * 10 = 300 seconds
+MAX_WAIT=12 # 12 * 10 = 120 seconds
 
 while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-        echo "Package manager still busy after 300 seconds, force proceeding..."
+        echo "Package manager still busy after 120 seconds, force proceeding..."
         # Kill unattended-upgrades if stuck
         sudo pkill -f unattended-upgrade || true
         sudo pkill -f apt || true
-        sleep 10
+        sleep 5
         # Force unlock if still locked
         sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock
         break
     fi
-    echo "Package manager is busy, waiting 10 seconds... ($((WAIT_COUNT * 10))/300 seconds)"
+    echo "Package manager is busy, waiting 10 seconds... ($((WAIT_COUNT * 10))/120 seconds)"
     sleep 10
 done
 
