@@ -17,6 +17,7 @@ load_dotenv()
 from services.flux_service import FluxService
 from services.eventbridge_client import send_progress_update as eb_send_progress, send_completion_update as eb_send_completion, send_error_update as eb_send_error
 from services.mqtt_client import send_progress_update, send_completion_update, send_error_update, cleanup_mqtt
+from services.instance_monitor import get_instance_monitor
 from models.generation_request import GenerationRequest, GenerationResponse
 
 # Configure logging
@@ -65,6 +66,10 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing AI services...")
     
     try:
+        # Start instance monitoring
+        instance_monitor = get_instance_monitor()
+        await instance_monitor.start_monitoring()
+        
         # Send startup event
         instance_id = os.getenv('EC2_INSTANCE_ID', 'unknown')
         await send_service_event("ai_service_starting", {
@@ -89,6 +94,8 @@ async def lifespan(app: FastAPI):
                 "model_loaded": True,
                 "timestamp": import_time.time()
             })
+            # Notify instance monitor that service is ready
+            await instance_monitor.send_service_ready()
         else:
             raise Exception("Failed to load FLUX model")
             
@@ -108,6 +115,12 @@ async def lifespan(app: FastAPI):
     
     # Cleanup
     logger.info("Shutting down AI services...")
+    
+    # Notify instance monitor about shutdown
+    instance_monitor = get_instance_monitor()
+    await instance_monitor.send_service_stopping()
+    instance_monitor.stop_monitoring()
+    
     # Send shutdown event
     await send_service_event("ai_service_stopping", {
         "instance_id": instance_id,
