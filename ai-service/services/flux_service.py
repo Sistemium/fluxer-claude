@@ -35,6 +35,14 @@ class FluxService:
                 original_levels[lib_name] = lib_logger.level
                 lib_logger.setLevel(logging.ERROR)
             
+            # Redirect stdout/stderr to suppress binary output during model loading
+            import sys
+            from io import StringIO
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            sys.stdout = StringIO()
+            sys.stderr = StringIO()
+            
             # Load the pipeline
             model_id = self.model_id
             
@@ -87,6 +95,10 @@ class FluxService:
             
             self.is_loaded = True
             
+            # Restore original stdout/stderr
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            
             # Restore original logging levels
             for lib_name, original_level in original_levels.items():
                 logging.getLogger(lib_name).setLevel(original_level)
@@ -115,6 +127,14 @@ class FluxService:
                 lib_logger = logging.getLogger(lib_name)
                 original_levels[lib_name] = lib_logger.level
                 lib_logger.setLevel(logging.ERROR)
+            
+            # Redirect stdout/stderr to suppress binary output during model loading
+            import sys
+            from io import StringIO
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            sys.stdout = StringIO()
+            sys.stderr = StringIO()
             
             # Load the pipeline
             model_id = self.model_id
@@ -169,6 +189,10 @@ class FluxService:
                     self.pipeline.enable_model_cpu_offload()
             
             self.is_loaded = True
+            
+            # Restore original stdout/stderr
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
             
             # Restore original logging levels
             for lib_name, original_level in original_levels.items():

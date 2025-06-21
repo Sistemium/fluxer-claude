@@ -50,6 +50,10 @@ suppress_model_loading_logs()
 import os
 os.environ['TQDM_DISABLE'] = '1'
 
+# Redirect stdout/stderr during model loading to suppress binary output
+import sys
+from io import StringIO
+
 # Global variables
 flux_service: Optional[FluxService] = None
 
