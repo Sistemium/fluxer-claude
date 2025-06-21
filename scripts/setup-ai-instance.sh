@@ -291,6 +291,11 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
+# Install update script
+echo "Installing update script..."
+cp /opt/ai-service-repo/scripts/update-ai-service.sh /usr/local/bin/update-ai-service
+chmod +x /usr/local/bin/update-ai-service
+
 # Start service
 echo "Starting AI service..."
 systemctl daemon-reload
