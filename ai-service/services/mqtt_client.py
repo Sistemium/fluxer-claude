@@ -13,7 +13,7 @@ class MqttClient:
     def __init__(self):
         self.client = mqtt.Client(client_id=f"fluxer-ai-{os.getpid()}")
         self.broker_host = os.getenv('MQTT_BROKER_HOST', 'localhost')
-        self.broker_port = int(os.getenv('MQTT_BROKER_PORT', '1883'))
+        self.broker_port = int(os.getenv('MQTT_BROKER_PORT') or '1883')
         self.username = os.getenv('MQTT_USERNAME')
         self.password = os.getenv('MQTT_PASSWORD')
         self.connected = False
