@@ -72,6 +72,65 @@
       </v-col>
     </v-row>
 
+    <!-- Region Management -->
+    <v-row class="mt-4">
+      <v-col cols="12">
+        <v-card>
+          <v-card-title>
+            <v-icon class="mr-2">mdi-earth</v-icon>
+            AWS Region Management
+          </v-card-title>
+          <v-card-text>
+            <v-row>
+              <v-col cols="12" md="6">
+                <v-select
+                  v-model="selectedRegionCode"
+                  :items="regionOptions"
+                  label="Select AWS Region"
+                  item-title="label"
+                  item-value="value"
+                  :loading="loading.regions"
+                  prepend-icon="mdi-map-marker"
+                ></v-select>
+              </v-col>
+              <v-col cols="12" md="6" class="d-flex align-center">
+                <v-btn 
+                  color="primary" 
+                  @click="setDefaultRegion" 
+                  :loading="loading.setRegion"
+                  :disabled="!selectedRegionCode"
+                  class="mr-2"
+                >
+                  <v-icon left>mdi-check</v-icon>
+                  Set as Default
+                </v-btn>
+                <v-btn 
+                  color="info" 
+                  @click="loadRegions" 
+                  :loading="loading.regions"
+                  icon
+                >
+                  <v-icon>mdi-refresh</v-icon>
+                </v-btn>
+              </v-col>
+            </v-row>
+            
+            <v-alert 
+              v-if="currentRegion" 
+              type="info" 
+              class="mt-3"
+              outlined
+            >
+              <strong>Current Default Region:</strong> {{ currentRegion.regionName }} ({{ currentRegion.regionCode }})<br>
+              <strong>AMI ID:</strong> {{ currentRegion.amiId }}<br>
+              <strong>Instance Types:</strong> {{ currentRegion.instanceTypes.join(', ') }}<br>
+              <strong>Spot Price:</strong> ${{ currentRegion.spotPrice }}/hour
+            </v-alert>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+
     <!-- Control Buttons -->
     <v-row class="mt-4">
       <v-col cols="12">
@@ -269,6 +328,21 @@ interface HealthStatus {
   lastChecked: string
 }
 
+interface SpotRegion {
+  regionCode: string
+  regionName: string
+  amiId: string
+  securityGroupIds: string[]
+  isActive: boolean
+  isDefault: boolean
+  spotPrice: number
+  instanceTypes: string[]
+  availabilityZones: string[]
+  notes?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 // Reactive data
 const activeInstances = ref<SpotInstance[]>([])
 const queueStats = ref<QueueStats | null>(null)
@@ -278,12 +352,19 @@ const selectedInstance = ref<SpotInstance | null>(null)
 const showTerminateDialog = ref(false)
 const search = ref('')
 
+// Region management
+const availableRegions = ref<SpotRegion[]>([])
+const selectedRegionCode = ref<string>('')
+const currentRegion = ref<SpotRegion | null>(null)
+
 const loading = ref({
   launch: false,
   terminate: false,
   autoScaler: false,
   refresh: false,
-  health: {} as Record<string, boolean>
+  health: {} as Record<string, boolean>,
+  regions: false,
+  setRegion: false
 })
 
 // Table headers
@@ -300,6 +381,15 @@ const headers = [
 // Computed
 const hasRunningInstances = computed(() => 
   activeInstances.value.some(i => i.state === 'running')
+)
+
+const regionOptions = computed(() =>
+  availableRegions.value
+    .filter(region => region.isActive)
+    .map(region => ({
+      label: `${region.regionName} (${region.regionCode})${region.isDefault ? ' - Current' : ''}`,
+      value: region.regionCode
+    }))
 )
 
 // Methods
@@ -387,9 +477,58 @@ async function checkHealth(instanceId: string) {
   loading.value.health[instanceId] = false
 }
 
+async function loadRegions() {
+  loading.value.regions = true
+  try {
+    const response = await api.get('/admin/regions')
+    availableRegions.value = response.data.regions || []
+    
+    // Find current default region
+    const defaultRegion = availableRegions.value.find(r => r.isDefault)
+    if (defaultRegion) {
+      currentRegion.value = defaultRegion
+      selectedRegionCode.value = defaultRegion.regionCode
+    }
+  } catch (error) {
+    console.error('Failed to load regions:', error)
+  }
+  loading.value.regions = false
+}
+
+async function setDefaultRegion() {
+  if (!selectedRegionCode.value) return
+  
+  loading.value.setRegion = true
+  try {
+    const response = await api.post(`/admin/regions/${selectedRegionCode.value}/set-default`)
+    
+    // Update current region
+    const updatedRegion = response.data.region
+    if (updatedRegion) {
+      currentRegion.value = updatedRegion
+      
+      // Update the regions list
+      availableRegions.value = availableRegions.value.map(r => ({
+        ...r,
+        isDefault: r.regionCode === selectedRegionCode.value
+      }))
+    }
+    
+    // Show success message
+    console.log(`Successfully set ${selectedRegionCode.value} as default region`)
+    
+    // Refresh status to show new region data
+    await refreshStatus()
+  } catch (error) {
+    console.error('Failed to set default region:', error)
+  }
+  loading.value.setRegion = false
+}
+
 // Lifecycle
 onMounted(() => {
   refreshStatus()
+  loadRegions()
   
   // Auto-refresh every 30 seconds
   setInterval(refreshStatus, 30000)

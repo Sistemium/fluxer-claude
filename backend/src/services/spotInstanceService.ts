@@ -183,7 +183,18 @@ export class SpotInstanceService {
 
   private async loadExistingInstances(): Promise<void> {
     try {
-      // Find running instances with our tags or name pattern
+      // Get all possible instance types from current region config
+      const regionService = SpotRegionService.getInstance()
+      const currentRegion = await regionService.getDefaultRegion()
+      const instanceTypes = currentRegion?.instanceTypes || [this.config.instanceType]
+      
+      logger.debug('Searching for existing instances', {
+        region: this.ec2.config.region,
+        instanceTypes,
+        keyName: this.config.keyName
+      })
+
+      // Find running instances with our configuration
       const command = new DescribeInstancesCommand({
         Filters: [
           {
@@ -192,7 +203,7 @@ export class SpotInstanceService {
           },
           {
             Name: 'instance-type',
-            Values: [this.config.instanceType]
+            Values: instanceTypes
           },
           {
             Name: 'key-name',
@@ -201,7 +212,28 @@ export class SpotInstanceService {
         ]
       })
 
-      const response = await this.ec2.send(command)
+      let response = await this.ec2.send(command)
+      
+      // If no instances found with current config, try broader search
+      if (!response.Reservations || response.Reservations.length === 0) {
+        logger.info('No instances found with current config, trying broader search...')
+        
+        const fallbackCommand = new DescribeInstancesCommand({
+          Filters: [
+            {
+              Name: 'instance-state-name',
+              Values: ['running', 'pending', 'stopping']
+            },
+            {
+              Name: 'key-name', 
+              Values: [this.config.keyName]
+            }
+          ]
+        })
+        
+        response = await this.ec2.send(fallbackCommand)
+      }
+
       const instances: SpotInstanceInfo[] = []
 
       let newInstancesCount = 0
