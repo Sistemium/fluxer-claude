@@ -239,21 +239,51 @@ class FluxService:
             # Create a progress callback for the pipeline
             def step_callback(pipe, step: int, timestep: int, callback_kwargs):
                 if progress_callback:
+                    # Temporarily restore stdout for our callback
+                    import sys
+                    current_stdout = sys.stdout
+                    current_stderr = sys.stderr
+                    if hasattr(self, '_original_stdout'):
+                        sys.stdout = self._original_stdout
+                        sys.stderr = self._original_stderr
+                    
                     progress = 20 + int((step / num_inference_steps) * 70)  # 20% to 90%
                     progress_callback(progress, f"Diffusion step {step}/{num_inference_steps}")
+                    
+                    # Restore suppression
+                    sys.stdout = current_stdout
+                    sys.stderr = current_stderr
                 return callback_kwargs
             
-            # Generate the image
-            with torch.inference_mode():
-                result = self.pipeline(
-                    prompt=prompt,
-                    width=width,
-                    height=height,
-                    guidance_scale=guidance_scale,
-                    num_inference_steps=num_inference_steps,
-                    max_sequence_length=512,
-                    callback_on_step_end=step_callback
-                )
+            # Generate the image with suppressed stdout/stderr
+            import sys
+            from io import StringIO
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            
+            # Store original for callback access
+            self._original_stdout = original_stdout
+            self._original_stderr = original_stderr
+            
+            # Suppress output during generation
+            sys.stdout = StringIO()
+            sys.stderr = StringIO()
+            
+            try:
+                with torch.inference_mode():
+                    result = self.pipeline(
+                        prompt=prompt,
+                        width=width,
+                        height=height,
+                        guidance_scale=guidance_scale,
+                        num_inference_steps=num_inference_steps,
+                        max_sequence_length=512,
+                        callback_on_step_end=step_callback
+                    )
+            finally:
+                # Always restore output
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
                 
                 image = result.images[0]
             
