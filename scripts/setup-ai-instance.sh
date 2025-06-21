@@ -167,12 +167,18 @@ if [ -d "/opt/dlami/nvme" ]; then
         
         echo "Checking PyTorch installation..."
         if [ "$PYTHON_TYPE" = "conda" ]; then
-            python -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())" || {
+            # Quick check for PyTorch availability without CUDA initialization
+            python -c "import torch; print('PyTorch version:', torch.__version__)" 2>/dev/null || {
                 echo "PyTorch not found, installing..."
                 conda install pytorch torchvision pytorch-cuda -c pytorch -c nvidia -y
+                # Verify installation after install
+                python -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
             }
         else
-            "$PYTHON_BASE/bin/python" -c "import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+            # Quick check for PyTorch availability without CUDA initialization  
+            "$PYTHON_BASE/bin/python" -c "import torch; print('PyTorch version:', torch.__version__)" 2>/dev/null || {
+                echo "PyTorch not found in dedicated environment"
+            }
         fi
         
         if [ "$PYTHON_TYPE" = "conda" ]; then
