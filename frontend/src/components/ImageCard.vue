@@ -5,6 +5,8 @@
       :alt="image.prompt"
       height="200"
       cover
+      class="cursor-pointer"
+      @click="showFullscreen = true"
     >
       <template v-slot:placeholder>
         <v-row
@@ -31,6 +33,11 @@
 
     <v-card-actions>
       <v-btn
+        icon="mdi-fullscreen"
+        size="small"
+        @click="showFullscreen = true"
+      ></v-btn>
+      <v-btn
         icon="mdi-download"
         size="small"
         @click="onDownload"
@@ -43,9 +50,18 @@
       ></v-btn>
     </v-card-actions>
   </v-card>
+
+  <ImageDialog
+    v-model="showFullscreen"
+    :image="image"
+    @download="onDownload"
+  />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
+import ImageDialog from './ImageDialog.vue'
+
 interface ImageType {
   id: string
   imageUrl: string
@@ -64,6 +80,8 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+const showFullscreen = ref(false)
 
 const formatDate = (dateString: string) => {
   const date = new Date(dateString)
