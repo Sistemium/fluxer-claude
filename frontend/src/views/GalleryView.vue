@@ -15,50 +15,11 @@
         md="4"
         lg="3"
       >
-        <v-card>
-          <v-img
-            :src="image.imageUrl"
-            :alt="image.prompt"
-            height="200"
-            cover
-          >
-            <template v-slot:placeholder>
-              <v-row
-                class="fill-height ma-0"
-                align="center"
-                justify="center"
-              >
-                <v-progress-circular
-                  indeterminate
-                  color="grey-lighten-5"
-                ></v-progress-circular>
-              </v-row>
-            </template>
-          </v-img>
-          
-          <v-card-text>
-            <div class="text-truncate">
-              {{ image.prompt }}
-            </div>
-            <div class="text-caption text-grey">
-              {{ formatDate(image.createdAt) }}
-            </div>
-          </v-card-text>
-
-          <v-card-actions>
-            <v-btn
-              icon="mdi-download"
-              size="small"
-              @click="downloadImage(image)"
-            ></v-btn>
-            <v-btn
-              icon="mdi-delete"
-              size="small"
-              color="error"
-              @click="deleteImage(image.id)"
-            ></v-btn>
-          </v-card-actions>
-        </v-card>
+        <ImageCard
+          :image="image"
+          @download="downloadImage"
+          @delete="deleteImage"
+        />
       </v-col>
     </v-row>
 
@@ -76,19 +37,10 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useImagesStore } from '@/stores/images'
+import ImageCard from '@/components/ImageCard.vue'
 
 const imagesStore = useImagesStore()
 
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date)
-}
 
 const downloadImage = (image: any) => {
   const link = document.createElement('a')
