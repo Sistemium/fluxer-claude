@@ -220,6 +220,11 @@ echo "Setting up environment variables..."
 INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
 INSTANCE_TYPE=$(curl -s http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null || echo "unknown")
 
+# Extract MQTT host and port from MQTT_BROKER_URL
+MQTT_URL="${MQTT_BROKER_URL:-mqtt://mqtt1.sistemium.net}"
+MQTT_HOST=$(echo "$MQTT_URL" | sed 's|mqtt://||' | sed 's|:[0-9]*$||')
+MQTT_PORT=$(echo "$MQTT_URL" | grep -o ':[0-9]*$' | sed 's|:||' || echo "1883")
+
 cat << EOF > /opt/ai-service.env
 AWS_REGION=${SPOT_AWS_REGION:-${AWS_REGION:-eu-west-1}}
 BACKEND_URL=${BACKEND_URL:-http://localhost:3000}
@@ -231,6 +236,10 @@ CUDA_VISIBLE_DEVICES=0
 MODEL_NAME=black-forest-labs/FLUX.1-dev
 EC2_INSTANCE_ID=$INSTANCE_ID
 EC2_INSTANCE_TYPE=$INSTANCE_TYPE
+MQTT_BROKER_HOST=$MQTT_HOST
+MQTT_BROKER_PORT=$MQTT_PORT
+MQTT_USERNAME=${MQTT_USERNAME:-}
+MQTT_PASSWORD=${MQTT_PASSWORD:-}
 EOF
 
 # Create systemd service - use detected python environment
