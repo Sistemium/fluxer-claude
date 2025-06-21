@@ -139,14 +139,15 @@ class FluxService:
             
             if self.device == "cuda":
                 self.pipeline = self.pipeline.to("cuda")
-                # Enable memory efficient attention if available
-                try:
-                    self.pipeline.enable_xformers_memory_efficient_attention()
-                except:
-                    logger.warning("xformers not available, using default attention")
+                # # Enable memory efficient attention if available
+                # try:
+                #     self.pipeline.enable_xformers_memory_efficient_attention()
+                # except:
+                #     logger.warning("xformers not available, using default attention")
                 
-                # Enable CPU offload for memory optimization  
-                self.pipeline.enable_model_cpu_offload()
+                # Enable CPU offload for memory optimization
+                if os.getenv("CPU_OFFLOAD") == "enable":
+                    self.pipeline.enable_model_cpu_offload()
             
             self.is_loaded = True
             logger.info(f"{self.model_id} model loaded successfully")
