@@ -20,20 +20,35 @@ from services.mqtt_client import send_progress_update, send_completion_update, s
 from services.instance_monitor import get_instance_monitor
 from models.generation_request import GenerationRequest, GenerationResponse
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with more restrictive format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
-# Suppress verbose logging from libraries during model loading
+# Completely disable verbose logging from libraries
 def suppress_model_loading_logs():
-    """Suppress verbose logging from transformers, diffusers etc during model loading"""
-    logging.getLogger("transformers").setLevel(logging.WARNING)
-    logging.getLogger("diffusers").setLevel(logging.WARNING)
-    logging.getLogger("accelerate").setLevel(logging.WARNING)
-    logging.getLogger("torch").setLevel(logging.WARNING)
-    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+    """Completely suppress verbose logging from ML libraries"""
+    # Set to CRITICAL level to suppress almost everything
+    for lib_name in ['transformers', 'diffusers', 'accelerate', 'torch', 'huggingface_hub', 
+                     'safetensors', 'tokenizers', 'urllib3', 'requests', 'tqdm']:
+        logging.getLogger(lib_name).setLevel(logging.CRITICAL)
+    
+    # Suppress all existing loggers that might contain these libraries
+    for name in list(logging.root.manager.loggerDict.keys()):
+        if any(lib in name.lower() for lib in ['transformers', 'diffusers', 'torch', 'accelerate', 
+                                              'huggingface', 'safetensors', 'tokenizers', 'tqdm']):
+            logging.getLogger(name).setLevel(logging.CRITICAL)
 
 suppress_model_loading_logs()
+
+# Disable TQDM progress bars completely
+import os
+os.environ['TQDM_DISABLE'] = '1'
 
 # Global variables
 flux_service: Optional[FluxService] = None
