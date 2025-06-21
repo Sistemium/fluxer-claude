@@ -1,3 +1,8 @@
+<route lang="yaml">
+meta:
+  requiresGuest: true
+</route>
+
 <template>
   <v-container class="fill-height" fluid>
     <v-row justify="center" align="center">

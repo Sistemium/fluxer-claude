@@ -1,3 +1,9 @@
+<route lang="yaml">
+meta:
+  requiresAuth: true
+  requiresAdmin: true
+</route>
+
 <template>
   <v-container>
     <v-row>
@@ -176,6 +182,16 @@
             >
               <v-icon left>mdi-refresh</v-icon>
               Refresh Status
+            </v-btn>
+
+            <v-btn 
+              color="purple" 
+              @click="setupEventBridge" 
+              :loading="loading.setupEvents"
+              class="mr-2 mb-2"
+            >
+              <v-icon left>mdi-satellite-uplink</v-icon>
+              Setup Event Monitoring
             </v-btn>
           </v-card-text>
         </v-card>
@@ -364,7 +380,8 @@ const loading = ref({
   refresh: false,
   health: {} as Record<string, boolean>,
   regions: false,
-  setRegion: false
+  setRegion: false,
+  setupEvents: false
 })
 
 // Table headers
@@ -523,6 +540,19 @@ async function setDefaultRegion() {
     console.error('Failed to set default region:', error)
   }
   loading.value.setRegion = false
+}
+
+async function setupEventBridge() {
+  loading.value.setupEvents = true
+  try {
+    const response = await api.post('/admin/ec2/setup-events')
+    console.log('EventBridge setup successful:', response.data.message)
+    
+    // Could show success notification here
+  } catch (error) {
+    console.error('Failed to setup EventBridge:', error)
+  }
+  loading.value.setupEvents = false
 }
 
 // Lifecycle

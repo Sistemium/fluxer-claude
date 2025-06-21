@@ -1,3 +1,8 @@
+<route lang="yaml">
+meta:
+  requiresAuth: true
+</route>
+
 <template>
   <v-container>
     <v-row>
