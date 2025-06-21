@@ -48,10 +48,13 @@ const imagesStore = useImagesStore()
 
 
 const downloadImage = (image: any) => {
+  const downloadUrl = `/api/images/${image.id}/download`
   const link = document.createElement('a')
-  link.href = image.imageUrl
+  link.href = downloadUrl
   link.download = `fluxer-${image.id}.png`
+  document.body.appendChild(link)
   link.click()
+  document.body.removeChild(link)
 }
 
 const deleteImage = async (id: string) => {
