@@ -4,24 +4,21 @@ meta:
 </route>
 
 <template>
-  <v-row justify="center"
-         class="mt-4">
-    <v-col cols="12"
-           md="8"
-           lg="6">
+  <v-row justify="center" class="mt-4">
+    <v-col cols="12" md="8" lg="6">
       <GenerationStatus :job-id="jobId"
-                        :is-generating="imagesStore.isGenerating"
-                        :progress="imagesStore.generationProgress"
-                        :message="imagesStore.generationMessage"
-                        :error="imagesStore.generationError"
-                        :generated-image="generatedImage"
+                        :is-generating="generation?.status === 'generating'"
+                        :progress="generation?.progress || 0"
+                        :message="generation?.message || ''"
+                        :error="generation?.error || null"
+                        :generated-image="generation?.image?.imageUrl || null"
                         :show-restore-message="showRestoreMessage" />
     </v-col>
   </v-row>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useImagesStore } from '@/stores/images'
 import GenerationStatus from '@/components/GenerationStatus.vue'
@@ -35,11 +32,13 @@ const route = useRoute<'/generate/[jobId]'>()
 const router = useRouter()
 const imagesStore = useImagesStore()
 
-const generatedImage = ref<string | null>(null)
 const showRestoreMessage = ref(false)
 
 // Get jobId from props or route params
 const jobId = props.jobId || route.params.jobId as string
+
+// Get reactive generation info from store
+const generation = imagesStore.getGenerationInfo(jobId)
 
 // Restore generation state on mount
 onMounted(async () => {
@@ -55,8 +54,7 @@ onMounted(async () => {
 
     if (result) {
       if (typeof result === 'object' && 'imageUrl' in result) {
-        // Show the completed image
-        generatedImage.value = result.imageUrl
+        // Show the completed image - no need to set generatedImage as it's now reactive
         console.log('Generation state restored successfully')
 
       } else {

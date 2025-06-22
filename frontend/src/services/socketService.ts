@@ -23,9 +23,9 @@ interface ErrorEvent {
 export class SocketService {
   private static instance: SocketService
   private socket: Socket | null = null
-  private progressCallbacks = new Map<string, (progress: ProgressEvent) => void>()
-  private completedCallbacks = new Map<string, (completed: CompletedEvent) => void>()
-  private errorCallbacks = new Map<string, (error: ErrorEvent) => void>()
+  private globalProgressHandler: ((progress: ProgressEvent) => void) | null = null
+  private globalCompletedHandler: ((completed: CompletedEvent) => void) | null = null
+  private globalErrorHandler: ((error: ErrorEvent) => void) | null = null
 
   static getInstance(): SocketService {
     if (!SocketService.instance) {
@@ -82,30 +82,24 @@ export class SocketService {
         // Listen for progress events
         this.socket.on('generation:progress', (data: ProgressEvent) => {
           console.log('Progress update received:', data)
-          const callback = this.progressCallbacks.get(data.jobId)
-          console.log('Progress callback found:', !!callback, 'for job:', data.jobId)
-          if (callback) {
-            callback(data)
+          if (this.globalProgressHandler) {
+            this.globalProgressHandler(data)
           }
         })
 
         // Listen for completion events
         this.socket.on('generation:completed', (data: CompletedEvent) => {
           console.log('Generation completed received:', data)
-          const callback = this.completedCallbacks.get(data.jobId)
-          console.log('Completion callback found:', !!callback, 'for job:', data.jobId)
-          if (callback) {
-            callback(data)
+          if (this.globalCompletedHandler) {
+            this.globalCompletedHandler(data)
           }
         })
 
         // Listen for error events
         this.socket.on('generation:error', (data: ErrorEvent) => {
           console.log('Generation error received:', data)
-          const callback = this.errorCallbacks.get(data.jobId)
-          console.log('Error callback found:', !!callback, 'for job:', data.jobId)
-          if (callback) {
-            callback(data)
+          if (this.globalErrorHandler) {
+            this.globalErrorHandler(data)
           }
         })
 
@@ -120,35 +114,34 @@ export class SocketService {
       this.socket.disconnect()
       this.socket = null
     }
-    this.progressCallbacks.clear()
-    this.completedCallbacks.clear()
-    this.errorCallbacks.clear()
+    this.globalProgressHandler = null
+    this.globalCompletedHandler = null
+    this.globalErrorHandler = null
   }
 
-  // Subscribe to progress updates for a specific job
-  onProgress(jobId: string, callback: (progress: ProgressEvent) => void) {
-    console.log('Registering progress callback for job:', jobId)
-    this.progressCallbacks.set(jobId, callback)
-    console.log('Total progress callbacks:', this.progressCallbacks.size)
+  // Set global progress handler
+  setProgressHandler(callback: (progress: ProgressEvent) => void) {
+    console.log('Setting global progress handler')
+    this.globalProgressHandler = callback
   }
 
-  // Subscribe to completion for a specific job
-  onCompleted(jobId: string, callback: (completed: CompletedEvent) => void) {
-    console.log('Registering completion callback for job:', jobId)
-    this.completedCallbacks.set(jobId, callback)
+  // Set global completion handler
+  setCompletedHandler(callback: (completed: CompletedEvent) => void) {
+    console.log('Setting global completion handler')
+    this.globalCompletedHandler = callback
   }
 
-  // Subscribe to errors for a specific job
-  onError(jobId: string, callback: (error: ErrorEvent) => void) {
-    console.log('Registering error callback for job:', jobId)
-    this.errorCallbacks.set(jobId, callback)
+  // Set global error handler
+  setErrorHandler(callback: (error: ErrorEvent) => void) {
+    console.log('Setting global error handler')
+    this.globalErrorHandler = callback
   }
 
-  // Unsubscribe from all events for a specific job
-  unsubscribe(jobId: string) {
-    this.progressCallbacks.delete(jobId)
-    this.completedCallbacks.delete(jobId)
-    this.errorCallbacks.delete(jobId)
+  // Clear all handlers
+  clearHandlers() {
+    this.globalProgressHandler = null
+    this.globalCompletedHandler = null
+    this.globalErrorHandler = null
   }
 
   get isConnected(): boolean {

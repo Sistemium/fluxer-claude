@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import api from '@/utils/api'
 import { SocketService } from '@/services/socketService'
 
@@ -9,6 +9,16 @@ interface GeneratedImage {
   imageUrl: string
   width: number
   height: number
+  createdAt: string
+}
+
+interface GenerationInfo {
+  jobId: string
+  status: 'queued' | 'generating' | 'completed' | 'failed'
+  progress: number
+  message: string
+  error?: string
+  image?: GeneratedImage
   createdAt: string
 }
 
@@ -28,12 +38,33 @@ export interface GenerationResponse {
 
 export const useImagesStore = defineStore('images', () => {
   const images = ref<GeneratedImage[]>([])
-  const isGenerating = ref(false)
-  const generationError = ref<string | null>(null)
-  const generationProgress = ref(0)
-  const generationMessage = ref('')
-  const currentJobId = ref<string | null>(null)
+  const generations = ref(new Map<string, GenerationInfo>())
   const navigationCallback = ref<((path: string) => void) | null>(null)
+  
+  // Computed for backwards compatibility
+  const isGenerating = computed(() => {
+    return Array.from(generations.value.values()).some(gen => gen.status === 'generating')
+  })
+  
+  const generationError = computed(() => {
+    const errorGen = Array.from(generations.value.values()).find(gen => gen.error)
+    return errorGen?.error || null
+  })
+  
+  const generationProgress = computed(() => {
+    const activeGen = Array.from(generations.value.values()).find(gen => gen.status === 'generating')
+    return activeGen?.progress || 0
+  })
+  
+  const generationMessage = computed(() => {
+    const activeGen = Array.from(generations.value.values()).find(gen => gen.status === 'generating')
+    return activeGen?.message || ''
+  })
+  
+  const currentJobId = computed(() => {
+    const activeGen = Array.from(generations.value.values()).find(gen => gen.status === 'generating')
+    return activeGen?.jobId || null
+  })
 
   // WebSocket initialization flag
   let isWebSocketInitialized = false
@@ -46,6 +77,32 @@ export const useImagesStore = defineStore('images', () => {
     try {
       await socketService.connect()
       console.log('WebSocket connected globally')
+      
+      // Set up global event handlers
+      socketService.setProgressHandler((progress) => {
+        console.log('Global progress handler:', progress)
+        const generation = generations.value.get(progress.jobId)
+        if (generation) {
+          generation.progress = progress.progress
+          generation.message = progress.message || 'Generating...'
+          generations.value.set(progress.jobId, { ...generation })
+        }
+      })
+      
+      socketService.setCompletedHandler(async (completed) => {
+        console.log('Global completion handler:', completed)
+        await handleJobCompletion(completed.jobId)
+      })
+      
+      socketService.setErrorHandler((error) => {
+        console.log('Global error handler:', error)
+        const generation = generations.value.get(error.jobId)
+        if (generation) {
+          generation.status = 'failed'
+          generation.error = error.error
+          generations.value.set(error.jobId, { ...generation })
+        }
+      })
 
       isWebSocketInitialized = true
     } catch (error) {
@@ -75,11 +132,27 @@ export const useImagesStore = defineStore('images', () => {
         console.log('Adding completed image to store:', image.id)
         images.value.unshift(image)
 
-        // Reset generation state
-        isGenerating.value = false
-        generationProgress.value = 100
-        generationMessage.value = 'Completed!'
-        currentJobId.value = null
+        // Update generation state
+        const generation = generations.value.get(jobId)
+        if (generation) {
+          generation.status = 'completed'
+          generation.progress = 100
+          generation.message = 'Completed!'
+          generation.image = image
+          generations.value.set(jobId, { ...generation })
+        }
+        
+        // Show toast if user is not on the job page
+        if (typeof window !== 'undefined') {
+          const currentPath = window.location.pathname
+          if (!currentPath.includes(jobId)) {
+            // Import composable dynamically to avoid circular dependencies
+            import('@/composables/useToast').then(({ useToast }) => {
+              const { success } = useToast()
+              success(`Image generation completed! Job: ${jobId}`, 8000)
+            })
+          }
+        }
 
         return image
       } else {
@@ -88,9 +161,12 @@ export const useImagesStore = defineStore('images', () => {
       }
     } catch (error) {
       console.error('Error handling completion:', error)
-      generationError.value = 'Failed to load completed image'
-      isGenerating.value = false
-      currentJobId.value = null
+      const generation = generations.value.get(jobId)
+      if (generation) {
+        generation.status = 'failed'
+        generation.error = 'Failed to load completed image'
+        generations.value.set(jobId, { ...generation })
+      }
       throw error
     }
   }
@@ -100,64 +176,29 @@ export const useImagesStore = defineStore('images', () => {
       // Initialize WebSocket if not already done
       await initializeWebSocket()
 
-      isGenerating.value = true
-      generationError.value = null
-      generationProgress.value = 0
-      generationMessage.value = 'Starting generation...'
-
       const response = await api.post<GenerationResponse>('/generate', request)
       const { jobId } = response.data
-      currentJobId.value = String(jobId)
       console.log('Generation started with jobId:', jobId, 'type:', typeof jobId)
-
-      // Setup WebSocket callbacks but don't wait for completion
-      setupWebSocketCallbacks(jobId)
+      
+      // Create generation info
+      const generationInfo: GenerationInfo = {
+        jobId: String(jobId),
+        status: 'queued',
+        progress: 0,
+        message: 'Starting generation...',
+        createdAt: new Date().toISOString()
+      }
+      
+      generations.value.set(String(jobId), generationInfo)
 
       // Return jobId immediately for navigation
       return { jobId: String(jobId) }
     } catch (error: any) {
-      generationError.value = error.response?.data?.error || 'Failed to generate image'
       console.error('Generation error:', error)
-      isGenerating.value = false
-      generationProgress.value = 0
-      generationMessage.value = ''
-      currentJobId.value = null
-
       throw error
     }
   }
 
-  function setupWebSocketCallbacks(jobId: string) {
-    console.log('Setting up WebSocket callbacks for job:', jobId)
-
-    // Register progress callback for this job
-    socketService.onProgress(jobId, (progress) => {
-      console.log('Progress for job:', jobId, progress.progress)
-      generationProgress.value = progress.progress
-      generationMessage.value = progress.message || 'Generating...'
-    })
-
-    // Register completion callback for this job
-    socketService.onCompleted(jobId, async () => {
-      console.log('Completion for job:', jobId)
-      try {
-        await handleJobCompletion(jobId)
-        socketService.unsubscribe(jobId)
-      } catch (error) {
-        console.error('Error handling completion:', error)
-        socketService.unsubscribe(jobId)
-      }
-    })
-
-    // Register error callback for this job
-    socketService.onError(jobId, (error) => {
-      console.log('Error for job:', jobId, error.error)
-      generationError.value = error.error
-      isGenerating.value = false
-      currentJobId.value = null
-      socketService.unsubscribe(jobId)
-    })
-  }
 
 
   async function loadImages() {
@@ -194,53 +235,20 @@ export const useImagesStore = defineStore('images', () => {
         return undefined
       }
 
-      currentJobId.value = jobId
-
       if (status.status === 'generating') {
         // Job is still in progress, restore generating state
         await initializeWebSocket()
 
-        isGenerating.value = true
-        generationProgress.value = status.progress || 0
-        generationMessage.value = 'Restoring generation...'
-        generationError.value = null
-
-        // Register WebSocket callbacks for this job
-        console.log('Setting up WebSocket callbacks for restored job:', jobId)
-
-        socketService.onProgress(jobId, (progress) => {
-          console.log('Restored progress for job:', jobId, progress.progress)
-          generationProgress.value = progress.progress
-          generationMessage.value = progress.message || 'Generating...'
-        })
-
-        socketService.onCompleted(jobId, async () => {
-          console.log('Restored completion for job:', jobId)
-          try {
-            await handleJobCompletion(jobId)
-            socketService.unsubscribe(jobId)
-
-            // Reset state after completion
-            isGenerating.value = false
-            currentJobId.value = null
-
-            // Update URL back to /generate
-            if (navigationCallback.value) {
-              navigationCallback.value('/generate')
-            }
-          } catch (error) {
-            console.error('Error handling restored completion:', error)
-            socketService.unsubscribe(jobId)
-          }
-        })
-
-        socketService.onError(jobId, (error) => {
-          console.log('Restored error for job:', jobId, error.error)
-          generationError.value = error.error
-          isGenerating.value = false
-          currentJobId.value = null
-          socketService.unsubscribe(jobId)
-        })
+        const generationInfo: GenerationInfo = {
+          jobId,
+          status: 'generating',
+          progress: status.progress || 0,
+          message: 'Restoring generation...',
+          createdAt: status.createdAt || new Date().toISOString()
+        }
+        
+        generations.value.set(jobId, generationInfo)
+        console.log('Restored generation state for job:', jobId)
 
         return true
       } else if (status.status === 'completed') {
@@ -262,21 +270,56 @@ export const useImagesStore = defineStore('images', () => {
           if (!existingImage) {
             images.value.unshift(image)
           }
+          
+          // Store completed generation info
+          const generationInfo: GenerationInfo = {
+            jobId,
+            status: 'completed',
+            progress: 100,
+            message: 'Completed!',
+            image,
+            createdAt: status.createdAt || new Date().toISOString()
+          }
+          
+          generations.value.set(jobId, generationInfo)
 
           return image
         }
       } else if (status.status === 'failed') {
         // Job failed, show error
-        generationError.value = status.error || 'Generation failed'
+        const generationInfo: GenerationInfo = {
+          jobId,
+          status: 'failed',
+          progress: 0,
+          message: 'Generation failed',
+          error: status.error || 'Generation failed',
+          createdAt: status.createdAt || new Date().toISOString()
+        }
+        
+        generations.value.set(jobId, generationInfo)
         return false
       }
 
       return false
     } catch (error) {
       console.error('Error restoring generation state:', error)
-      generationError.value = 'Failed to restore generation state'
+      const generationInfo: GenerationInfo = {
+        jobId,
+        status: 'failed',
+        progress: 0,
+        message: 'Failed to restore generation state',
+        error: 'Failed to restore generation state',
+        createdAt: new Date().toISOString()
+      }
+      
+      generations.value.set(jobId, generationInfo)
       return false
     }
+  }
+  
+  // Get generation info by jobId
+  function getGenerationInfo(jobId: string) {
+    return computed(() => generations.value.get(jobId))
   }
 
   // Function to set navigation callback to avoid circular imports
@@ -286,6 +329,7 @@ export const useImagesStore = defineStore('images', () => {
 
   return {
     images,
+    generations,
     isGenerating,
     generationError,
     generationProgress,
@@ -295,6 +339,7 @@ export const useImagesStore = defineStore('images', () => {
     loadImages,
     deleteImage,
     restoreGenerationState,
+    getGenerationInfo,
     setNavigationCallback
   }
 })
