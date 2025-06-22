@@ -174,6 +174,7 @@ meta:
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useImagesStore } from '@/stores/images'
+import { TokenService } from '@/services/tokenService'
 
 // Props for jobId when coming from URL
 const props = defineProps<{
@@ -196,28 +197,7 @@ const dimensions = [256, 512, 768, 1024]
 
 // Simple token counter (approximation for CLIP)
 // CLIP tokenizer splits on spaces and punctuation, so this is a rough estimate
-const tokenCount = computed(() => {
-  if (!prompt.value) return 0
-  
-  // Split by spaces and common punctuation, filter empty strings
-  const words = prompt.value
-    .toLowerCase()
-    .split(/[\s\.,;:!?\-\(\)\[\]"']+/)
-    .filter(word => word.length > 0)
-  
-  // Estimate tokens - most words = 1 token, some compound words = 2 tokens
-  // This is a simplified approximation since real CLIP tokenizer is more complex
-  let tokenEstimate = 0
-  words.forEach(word => {
-    if (word.length > 8) {
-      tokenEstimate += 2 // Long words often split into 2 tokens
-    } else {
-      tokenEstimate += 1
-    }
-  })
-  
-  return tokenEstimate
-})
+const tokenCount = computed(() => TokenService.estimateTokens(prompt.value))
 
 async function generateImage () {
   if (!prompt.value.trim()) return
