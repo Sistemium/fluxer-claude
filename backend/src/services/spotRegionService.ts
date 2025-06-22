@@ -98,6 +98,18 @@ export class SpotRegionService {
     return await SpotRegion.findOne({ regionCode, isActive: true })
   }
 
+  // Reload SpotInstanceService configuration when default region changes
+  private async reloadSpotInstanceConfig(): Promise<void> {
+    try {
+      const { SpotInstanceService } = await import('./spotInstanceService.js')
+      const spotService = SpotInstanceService.getInstance()
+      await spotService.loadRegionConfig()
+      logger.info('SpotInstanceService configuration reloaded for new default region')
+    } catch (reloadError) {
+      logger.error('Failed to reload SpotInstanceService configuration', reloadError)
+    }
+  }
+
   async setDefaultRegion(regionCode: string): Promise<ISpotRegion | null> {
     try {
       // First, remove default from all regions
@@ -112,6 +124,7 @@ export class SpotRegionService {
 
       if (updatedRegion) {
         logger.info(`Set ${regionCode} as default spot region`)
+        await this.reloadSpotInstanceConfig()
       }
 
       return updatedRegion
@@ -139,6 +152,11 @@ export class SpotRegionService {
 
       if (updatedRegion) {
         logger.info(`Updated spot region ${regionCode}`)
+        
+        // If this update made this region the default, reload SpotInstanceService config
+        if (updates.isDefault && updatedRegion.isDefault) {
+          await this.reloadSpotInstanceConfig()
+        }
       }
 
       return updatedRegion
@@ -159,6 +177,12 @@ export class SpotRegionService {
       await region.save()
       
       logger.info(`Created new spot region ${region.regionCode}`)
+      
+      // If this new region is set as default, reload SpotInstanceService config
+      if (regionData.isDefault) {
+        await this.reloadSpotInstanceConfig()
+      }
+      
       return region
     } catch (error) {
       logger.error('Failed to create region', error)
