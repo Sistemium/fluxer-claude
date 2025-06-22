@@ -34,7 +34,7 @@ export const useImagesStore = defineStore('images', () => {
   const generationMessage = ref('')
   const currentJobId = ref<string | null>(null)
   const navigationCallback = ref<((path: string) => void) | null>(null)
-  
+
   // WebSocket initialization flag
   let isWebSocketInitialized = false
   const socketService = SocketService.getInstance()
@@ -42,11 +42,11 @@ export const useImagesStore = defineStore('images', () => {
   // Initialize WebSocket once with global handlers
   async function initializeWebSocket() {
     if (isWebSocketInitialized) return
-    
+
     try {
       await socketService.connect()
       console.log('WebSocket connected globally')
-      
+
       isWebSocketInitialized = true
     } catch (error) {
       console.error('Failed to initialize WebSocket:', error)
@@ -71,16 +71,16 @@ export const useImagesStore = defineStore('images', () => {
           height: status.image.height || 512,
           createdAt: status.image.createdAt
         }
-        
+
         console.log('Adding completed image to store:', image.id)
         images.value.unshift(image)
-        
+
         // Reset generation state
         isGenerating.value = false
         generationProgress.value = 100
         generationMessage.value = 'Completed!'
         currentJobId.value = null
-        
+
         return image
       } else {
         console.warn('Completion event received but image not ready:', status)
@@ -99,7 +99,7 @@ export const useImagesStore = defineStore('images', () => {
     try {
       // Initialize WebSocket if not already done
       await initializeWebSocket()
-      
+
       isGenerating.value = true
       generationError.value = null
       generationProgress.value = 0
@@ -122,21 +122,21 @@ export const useImagesStore = defineStore('images', () => {
       generationProgress.value = 0
       generationMessage.value = ''
       currentJobId.value = null
-      
+
       throw error
     }
   }
 
   function setupWebSocketCallbacks(jobId: string) {
     console.log('Setting up WebSocket callbacks for job:', jobId)
-    
+
     // Register progress callback for this job
     socketService.onProgress(jobId, (progress) => {
       console.log('Progress for job:', jobId, progress.progress)
       generationProgress.value = progress.progress
       generationMessage.value = progress.message || 'Generating...'
     })
-    
+
     // Register completion callback for this job
     socketService.onCompleted(jobId, async () => {
       console.log('Completion for job:', jobId)
@@ -148,7 +148,7 @@ export const useImagesStore = defineStore('images', () => {
         socketService.unsubscribe(jobId)
       }
     })
-    
+
     // Register error callback for this job
     socketService.onError(jobId, (error) => {
       console.log('Error for job:', jobId, error.error)
@@ -183,47 +183,47 @@ export const useImagesStore = defineStore('images', () => {
   async function restoreGenerationState(jobId: string) {
     try {
       console.log('Restoring generation state for job:', jobId)
-      
+
       // Check job status from API
       const response = await api.get(`/generate/status/${jobId}`)
       const status = response.data
       console.log('Job status on restore:', status)
-      
+
       if (!status) {
         console.log('Job not found, redirecting to generate page')
         return undefined
       }
-      
+
       currentJobId.value = jobId
-      
+
       if (status.status === 'generating') {
         // Job is still in progress, restore generating state
         await initializeWebSocket()
-        
+
         isGenerating.value = true
         generationProgress.value = status.progress || 0
         generationMessage.value = 'Restoring generation...'
         generationError.value = null
-        
+
         // Register WebSocket callbacks for this job
         console.log('Setting up WebSocket callbacks for restored job:', jobId)
-        
+
         socketService.onProgress(jobId, (progress) => {
           console.log('Restored progress for job:', jobId, progress.progress)
           generationProgress.value = progress.progress
           generationMessage.value = progress.message || 'Generating...'
         })
-        
+
         socketService.onCompleted(jobId, async () => {
           console.log('Restored completion for job:', jobId)
           try {
             await handleJobCompletion(jobId)
             socketService.unsubscribe(jobId)
-            
+
             // Reset state after completion
             isGenerating.value = false
             currentJobId.value = null
-            
+
             // Update URL back to /generate
             if (navigationCallback.value) {
               navigationCallback.value('/generate')
@@ -233,7 +233,7 @@ export const useImagesStore = defineStore('images', () => {
             socketService.unsubscribe(jobId)
           }
         })
-        
+
         socketService.onError(jobId, (error) => {
           console.log('Restored error for job:', jobId, error.error)
           generationError.value = error.error
@@ -241,12 +241,12 @@ export const useImagesStore = defineStore('images', () => {
           currentJobId.value = null
           socketService.unsubscribe(jobId)
         })
-        
+
         return true
       } else if (status.status === 'completed') {
         // Job already completed, show result and redirect
         console.log('Job already completed, showing result')
-        
+
         if (status.image) {
           const image: GeneratedImage = {
             id: status.image.id,
@@ -256,13 +256,13 @@ export const useImagesStore = defineStore('images', () => {
             height: status.image.height || 512,
             createdAt: status.image.createdAt
           }
-          
+
           // Add to images if not already there
           const existingImage = images.value.find(img => img.id === image.id)
           if (!existingImage) {
             images.value.unshift(image)
           }
-          
+
           return image
         }
       } else if (status.status === 'failed') {
@@ -270,7 +270,7 @@ export const useImagesStore = defineStore('images', () => {
         generationError.value = status.error || 'Generation failed'
         return false
       }
-      
+
       return false
     } catch (error) {
       console.error('Error restoring generation state:', error)
@@ -278,12 +278,12 @@ export const useImagesStore = defineStore('images', () => {
       return false
     }
   }
-  
+
   // Function to set navigation callback to avoid circular imports
   function setNavigationCallback(callback: (path: string) => void) {
     navigationCallback.value = callback
   }
-  
+
   return {
     images,
     isGenerating,

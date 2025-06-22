@@ -6,15 +6,10 @@ meta:
 <template>
   <v-row justify="center" class="mt-4">
     <v-col cols="12" md="8" lg="6">
-      <GenerationStatus
-        :job-id="jobId"
-        :is-generating="imagesStore.isGenerating"
-        :progress="imagesStore.generationProgress"
-        :message="imagesStore.generationMessage"
-        :error="imagesStore.generationError"
-        :generated-image="generatedImage"
-        :show-restore-message="showRestoreMessage"
-      />
+      <GenerationStatus :job-id="jobId" :is-generating="imagesStore.isGenerating"
+        :progress="imagesStore.generationProgress" :message="imagesStore.generationMessage"
+        :error="imagesStore.generationError" :generated-image="generatedImage"
+        :show-restore-message="showRestoreMessage" />
     </v-col>
   </v-row>
 </template>
@@ -30,7 +25,7 @@ const props = defineProps<{
   jobId?: string
 }>()
 
-const route = useRoute()
+const route = useRoute<'/generate/[jobId]'>()
 const router = useRouter()
 const imagesStore = useImagesStore()
 
@@ -46,43 +41,35 @@ onMounted(async () => {
   imagesStore.setNavigationCallback((path: string) => {
     router.push(path)
   })
-  
-  if (jobId) {
-    console.log('Restoring generation state for jobId:', jobId)
-    
-    try {
-      const result = await imagesStore.restoreGenerationState(jobId)
-      
-      if (result) {
-        if (typeof result === 'object' && 'imageUrl' in result) {
-          // Show the completed image
-          generatedImage.value = result.imageUrl
-          console.log('Generation state restored successfully')
-          
-          // Redirect to clean generate URL after showing result
-          setTimeout(() => {
-            router.push('/generate')
-          }, 3000)
-        } else {
-          // Job is in progress, show restore message
-          showRestoreMessage.value = true
-        }
+
+  console.log('Restoring generation state for jobId:', jobId)
+
+  try {
+    const result = await imagesStore.restoreGenerationState(jobId)
+
+    if (result) {
+      if (typeof result === 'object' && 'imageUrl' in result) {
+        // Show the completed image
+        generatedImage.value = result.imageUrl
+        console.log('Generation state restored successfully')
+
       } else {
-        // Job not found or failed, redirect to generate page
-        console.log('Failed to restore state, redirecting to generate')
-        setTimeout(() => {
-          router.push('/generate')
-        }, 2000)
+        // Job is in progress, show restore message
+        showRestoreMessage.value = true
       }
-    } catch (error) {
-      console.error('Error restoring generation state:', error)
+    } else {
+      // Job not found or failed, redirect to generate page
+      console.log('Failed to restore state, redirecting to generate')
       setTimeout(() => {
-        router.push('/generate')
+        router.replace('/generate')
       }, 2000)
     }
-  } else {
-    // No jobId provided, redirect immediately
-    router.push('/generate')
+  } catch (error) {
+    console.error('Error restoring generation state:', error)
+    setTimeout(() => {
+      router.replace('/generate')
+    }, 2000)
   }
+
 })
 </script>
