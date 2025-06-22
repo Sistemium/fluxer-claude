@@ -11,50 +11,33 @@ meta:
                       :message="generation?.message || ''"
                       :error="generation?.error || null"
                       :generated-image="generation?.image?.imageUrl || null"
-                      :show-restore-message="showRestoreMessage" />
+                      :show-restore-message="false" />
   </v-col>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useImagesStore } from '@/stores/images'
 import GenerationStatus from '@/components/GenerationStatus.vue'
 
-// Props for jobId when coming from URL
-const props = defineProps<{
-  jobId?: string
-}>()
 
 const route = useRoute<'/generate/[jobId]'>()
 const router = useRouter()
 const imagesStore = useImagesStore()
-
-const showRestoreMessage = ref(false)
-
-// Get jobId from props or route params
-const jobId = props.jobId || route.params.jobId as string
+const jobId = computed(() => route.params.jobId)
 
 // Get reactive generation info from store
-const generation = imagesStore.getGenerationInfo(jobId)
+const generation = computed(() => imagesStore.getGenerationInfo(jobId.value))
 
 // Restore generation state on mount
-onMounted(async () => {
-  console.log('Restoring generation state for jobId:', jobId)
+watch(jobId, async jobIdValue => {
+  console.log('Restoring generation state for jobId:', jobIdValue)
 
   try {
-    const result = await imagesStore.restoreGenerationState(jobId)
+    const result = await imagesStore.restoreGenerationState(jobIdValue)
 
-    if (result) {
-      if (typeof result === 'object' && 'imageUrl' in result) {
-        // Show the completed image - no need to set generatedImage as it's now reactive
-        console.log('Generation state restored successfully')
-
-      } else {
-        // Job is in progress, show restore message
-        showRestoreMessage.value = true
-      }
-    } else {
+    if (!result) {
       // Job not found or failed, redirect to generate page
       console.log('Failed to restore state, redirecting to generate')
       setTimeout(() => {
@@ -68,5 +51,5 @@ onMounted(async () => {
     }, 2000)
   }
 
-})
+}, { immediate: true })
 </script>

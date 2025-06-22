@@ -269,7 +269,7 @@ export const useImagesStore = defineStore('images', () => {
   
   // Get generation info by jobId
   function getGenerationInfo(jobId: string) {
-    return computed(() => generations.value.get(jobId))
+    return generations.value.get(jobId)
   }
 
 
