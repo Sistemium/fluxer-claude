@@ -123,7 +123,6 @@ export class MqttService {
 
     const topics = [
       'fluxer/ai/progress/+/+',     // fluxer/ai/progress/{userId}/{jobId}
-      'fluxer/ai/completed/+/+',   // fluxer/ai/completed/{userId}/{jobId}
       'fluxer/ai/error/+/+'        // fluxer/ai/error/{userId}/{jobId}
     ]
 
@@ -145,8 +144,6 @@ export class MqttService {
 
       if (topic.startsWith('fluxer/ai/progress/')) {
         await this.handleProgressMessage(topic, message)
-      } else if (topic.startsWith('fluxer/ai/completed/')) {
-        await this.handleCompletionMessage(topic, message)
       } else if (topic.startsWith('fluxer/ai/error/')) {
         await this.handleErrorMessage(topic, message)
       } else {
@@ -176,42 +173,6 @@ export class MqttService {
     }
   }
 
-  private async handleCompletionMessage(topic: string, message: string): Promise<void> {
-    try {
-      const data: MqttCompletionMessage = JSON.parse(message)
-      
-      logger.info('Processing MQTT completion message', { 
-        jobId: data.jobId, 
-        userId: data.userId,
-        hasImageUrl: !!data.imageUrl 
-      })
-
-      // Update image record in database
-      const image = await Image.findOne({ jobId: data.jobId, userId: data.userId })
-      if (image) {
-        image.imageUrl = data.imageUrl
-        image.status = 'completed'
-        await image.save()
-        
-        logger.info('Image updated in database', { 
-          jobId: data.jobId, 
-          imageId: image._id 
-        })
-      } else {
-        logger.warn('Job not found in database for completion message', { 
-          jobId: data.jobId, 
-          userId: data.userId 
-        })
-      }
-
-      // Send WebSocket completion notification
-      const socketService = SocketService.getInstance()
-      socketService.emitCompleted(data.userId, data.jobId, data.imageUrl)
-
-    } catch (error) {
-      logger.error('Failed to handle MQTT completion message', { topic, message, error })
-    }
-  }
 
   private async handleErrorMessage(topic: string, message: string): Promise<void> {
     try {
@@ -337,5 +298,80 @@ export class MqttService {
       connected: this.isConnected,
       reconnectAttempts: this.reconnectAttempts
     }
+  }
+
+  /**
+   * Subscribe to custom MQTT topic with handler
+   */
+  async subscribeToTopic(topic: string, handler: (message: any) => void): Promise<void> {
+    if (!this.client || !this.isConnected) {
+      throw new Error('MQTT client not connected')
+    }
+
+    return new Promise((resolve, reject) => {
+      this.client!.subscribe(topic, { qos: 1 }, (error) => {
+        if (error) {
+          logger.error(`Failed to subscribe to topic ${topic}`, error)
+          reject(error)
+        } else {
+          logger.info(`Subscribed to MQTT topic: ${topic}`)
+          
+          // Add message handler
+          this.client!.on('message', (receivedTopic, payload) => {
+            if (receivedTopic === topic || this.topicMatches(receivedTopic, topic)) {
+              try {
+                const message = JSON.parse(payload.toString())
+                handler(message)
+              } catch (parseError) {
+                logger.error('Failed to parse MQTT message', { topic: receivedTopic, error: parseError })
+              }
+            }
+          })
+          
+          resolve()
+        }
+      })
+    })
+  }
+
+  /**
+   * Unsubscribe from MQTT topic
+   */
+  async unsubscribeFromTopic(topic: string): Promise<void> {
+    if (!this.client || !this.isConnected) {
+      return
+    }
+
+    return new Promise((resolve, reject) => {
+      this.client!.unsubscribe(topic, (error) => {
+        if (error) {
+          logger.error(`Failed to unsubscribe from topic ${topic}`, error)
+          reject(error)
+        } else {
+          logger.info(`Unsubscribed from MQTT topic: ${topic}`)
+          resolve()
+        }
+      })
+    })
+  }
+
+  /**
+   * Check if topic matches pattern (with + wildcards)
+   */
+  private topicMatches(topic: string, pattern: string): boolean {
+    const topicParts = topic.split('/')
+    const patternParts = pattern.split('/')
+    
+    if (topicParts.length !== patternParts.length) {
+      return false
+    }
+    
+    for (let i = 0; i < patternParts.length; i++) {
+      if (patternParts[i] !== '+' && patternParts[i] !== topicParts[i]) {
+        return false
+      }
+    }
+    
+    return true
   }
 }

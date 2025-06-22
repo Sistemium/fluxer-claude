@@ -65,7 +65,42 @@ export const useImagesStore = defineStore('images', () => {
       
       socketService.setCompletedHandler(async (completed) => {
         console.log('Global completion handler:', completed)
-        await handleJobCompletion(completed.jobId)
+        const generation = generations.value.get(completed.jobId)
+        if (generation) {
+          // Create image object from completion data (now with imageUrl from backend)
+          const image: GeneratedImage = {
+            id: completed.jobId,
+            prompt: generation.message || 'Generated image', 
+            imageUrl: completed.imageUrl,
+            width: 512,
+            height: 512,
+            createdAt: new Date().toISOString()
+          }
+
+          // Add to images gallery
+          const existingImage = images.value.find(img => img.imageUrl === completed.imageUrl)
+          if (!existingImage) {
+            images.value.unshift(image)
+          }
+
+          // Update generation state
+          generation.status = 'completed'
+          generation.progress = 100
+          generation.message = 'Completed!'
+          generation.image = image
+          generations.value.set(completed.jobId, { ...generation })
+          
+          // Show toast if user is not on the job page
+          if (typeof window !== 'undefined') {
+            const currentPath = window.location.pathname
+            if (!currentPath.includes(completed.jobId)) {
+              import('@/composables/useToast').then(({ useToast }) => {
+                const { success } = useToast()
+                success(`Image generation completed! Job: ${completed.jobId}`, 8000)
+              })
+            }
+          }
+        }
       })
       
       socketService.setErrorHandler((error) => {
@@ -85,65 +120,6 @@ export const useImagesStore = defineStore('images', () => {
     }
   }
 
-  // Handle job completion
-  async function handleJobCompletion(jobId: string) {
-    try {
-      console.log('Handling completion for job:', jobId)
-      const response = await api.get(`/generate/status/${jobId}`)
-      const status = response.data
-      console.log('API status response:', status)
-
-      if (status.status === 'completed' && status.image) {
-        const image: GeneratedImage = {
-          id: status.image.id,
-          prompt: status.image.prompt,
-          imageUrl: status.image.imageUrl,
-          width: status.image.width || 512,
-          height: status.image.height || 512,
-          createdAt: status.image.createdAt
-        }
-
-        console.log('Adding completed image to store:', image.id)
-        images.value.unshift(image)
-
-        // Update generation state
-        const generation = generations.value.get(jobId)
-        if (generation) {
-          generation.status = 'completed'
-          generation.progress = 100
-          generation.message = 'Completed!'
-          generation.image = image
-          generations.value.set(jobId, { ...generation })
-        }
-        
-        // Show toast if user is not on the job page
-        if (typeof window !== 'undefined') {
-          const currentPath = window.location.pathname
-          if (!currentPath.includes(jobId)) {
-            // Import composable dynamically to avoid circular dependencies
-            import('@/composables/useToast').then(({ useToast }) => {
-              const { success } = useToast()
-              success(`Image generation completed! Job: ${jobId}`, 8000)
-            })
-          }
-        }
-
-        return image
-      } else {
-        console.warn('Completion event received but image not ready:', status)
-        throw new Error('Image not ready')
-      }
-    } catch (error) {
-      console.error('Error handling completion:', error)
-      const generation = generations.value.get(jobId)
-      if (generation) {
-        generation.status = 'failed'
-        generation.error = 'Failed to load completed image'
-        generations.value.set(jobId, { ...generation })
-      }
-      throw error
-    }
-  }
 
   async function generateImage(request: GenerationRequest): Promise<{ jobId: string }> {
     try {
