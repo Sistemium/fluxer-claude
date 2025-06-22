@@ -82,8 +82,8 @@ meta:
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useImagesStore } from '@/stores/images'
-import GenerateForm, { type GenerateFormData } from '@/components/GenerateForm.vue'
+import { useImagesStore, type GenerationRequest } from '@/stores/images'
+import GenerateForm from '@/components/GenerateForm.vue'
 
 // Props for jobId when coming from URL
 const props = defineProps<{
@@ -94,7 +94,7 @@ const route = useRoute()
 const router = useRouter()
 const imagesStore = useImagesStore()
 
-const formData = reactive<GenerateFormData>({
+const formData = reactive<GenerationRequest>({
   prompt: '',
   width: Number(import.meta.env.VITE_DEFAULT_WIDTH) || 1024,
   height: Number(import.meta.env.VITE_DEFAULT_HEIGHT) || 1024,
@@ -106,7 +106,7 @@ const generatedImage = ref<string | null>(null)
 const isRestoredSession = ref(false)
 
 
-async function generateImage (data?: GenerateFormData) {
+async function generateImage (data?: GenerationRequest) {
   const generateData = data || formData
   
   if (!generateData.prompt.trim()) return

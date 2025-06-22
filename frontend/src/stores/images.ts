@@ -12,7 +12,7 @@ interface GeneratedImage {
   createdAt: string
 }
 
-interface GenerationRequest {
+export interface GenerationRequest {
   prompt: string
   width: number
   height: number

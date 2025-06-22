@@ -106,24 +106,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { TokenService } from '@/services/tokenService'
-
-export interface GenerateFormData {
-  prompt: string
-  width: number
-  height: number
-  num_inference_steps: number
-  guidance_scale: number
-}
+import { type GenerationRequest } from '@/stores/images'
 
 interface Props {
-  modelValue: GenerateFormData
+  modelValue: GenerationRequest
   disabled?: boolean
   loading?: boolean
 }
 
 interface Emits {
-  (e: 'update:modelValue', value: GenerateFormData): void
-  (e: 'submit', data: GenerateFormData): void
+  (e: 'update:modelValue', value: GenerationRequest): void
+  (e: 'submit', data: GenerationRequest): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -137,7 +130,7 @@ const dimensions = [256, 512, 768, 1024]
 
 const tokenCount = computed(() => TokenService.estimateTokens(props.modelValue.prompt))
 
-const updateField = <K extends keyof GenerateFormData>(field: K, value: GenerateFormData[K]) => {
+const updateField = <K extends keyof GenerationRequest>(field: K, value: GenerationRequest[K]) => {
   emit('update:modelValue', {
     ...props.modelValue,
     [field]: value
