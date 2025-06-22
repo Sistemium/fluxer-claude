@@ -48,6 +48,18 @@ export class SpotRegionService {
           notes: 'Main infrastructure region'
         },
         {
+          regionCode: 'us-east-2',
+          regionName: 'US East (Ohio)',
+          amiId: 'ami-0dafeaee7b35a3f19', // Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.6.0
+          securityGroupIds: ['sg-001f61796a34630a4'],
+          spotPrice: 0.45,
+          instanceTypes: ['g6e.xlarge', 'g5.xlarge', 'inf2.xlarge'],
+          availabilityZones: ['us-east-2a', 'us-east-2b', 'us-east-2c'],
+          isActive: true,
+          isDefault: false,
+          notes: 'Ohio region with good GPU availability'
+        },
+        {
           regionCode: 'eu-central-1',
           regionName: 'Europe (Frankfurt)',
           amiId: 'ami-0e872aee57663ae2d', // Ubuntu 24.04 LTS
