@@ -1,6 +1,6 @@
-import { 
-  EC2Client, 
-  TerminateInstancesCommand, 
+import {
+  EC2Client,
+  TerminateInstancesCommand,
   DescribeInstancesCommand,
   DescribeSpotInstanceRequestsCommand,
   RequestSpotInstancesCommand,
@@ -10,6 +10,7 @@ import {
 import { SpotRegionService } from './spotRegionService.js'
 import logger from '../utils/logger.js'
 import axios from 'axios'
+import uniq from 'lodash/uniq.js'
 
 interface SpotInstanceConfig {
   imageId: string
@@ -43,7 +44,7 @@ export class SpotInstanceService {
   constructor() {
     // Initialize with default region - will be updated from DB
     const defaultRegion = process.env.SPOT_AWS_REGION || process.env.AWS_REGION || 'us-east-1'
-    
+
     this.ec2 = new EC2Client({
       region: defaultRegion,
       credentials: {
@@ -54,10 +55,16 @@ export class SpotInstanceService {
 
     logger.info('SpotInstanceService initializing with default region', { region: defaultRegion })
 
+    const { SPOT_INSTANCE_TYPE } = process.env
+
+    if (!SPOT_INSTANCE_TYPE) {
+      throw Error('empty SPOT_INSTANCE_TYPE')
+    }
+
     // Initialize with fallback configuration - will be updated from DB
     this.config = {
       imageId: process.env.SPOT_AMI_ID || 'ami-0866a3c8686eaeeba', // Fallback AMI
-      instanceType: process.env.SPOT_INSTANCE_TYPE || 'g6e.2xlarge',
+      instanceType: SPOT_INSTANCE_TYPE as string,
       keyName: process.env.AWS_KEY_PAIR_NAME as string,
       securityGroupIds: (process.env.AWS_SECURITY_GROUP_ID || '').split(',').filter(Boolean),
       maxPrice: process.env.SPOT_MAX_PRICE || '0.50',
@@ -77,13 +84,13 @@ export class SpotInstanceService {
   async initialize(): Promise<void> {
     try {
       logger.info('Initializing SpotInstanceService - loading config from DB')
-      
+
       // Load region configuration from database
       await this.loadRegionConfig()
-      
+
       logger.info('Loading existing instances')
       await this.loadExistingInstances()
-      
+
       // Start periodic refresh of instance status
       this.startPeriodicRefresh()
     } catch (error) {
@@ -95,7 +102,7 @@ export class SpotInstanceService {
     try {
       const regionService = SpotRegionService.getInstance()
       const defaultRegion = await regionService.getDefaultRegion()
-      
+
       if (!defaultRegion) {
         logger.warn('No default region found in database, using environment config')
         this.validateConfig()
@@ -114,7 +121,7 @@ export class SpotInstanceService {
       // Update configuration from database
       this.config = {
         imageId: defaultRegion.amiId,
-        instanceType: process.env.SPOT_INSTANCE_TYPE || 'g6e.2xlarge',
+        instanceType: process.env.SPOT_INSTANCE_TYPE as string,
         keyName: process.env.AWS_KEY_PAIR_NAME as string, // Still from env
         securityGroupIds: defaultRegion.securityGroupIds,
         maxPrice: defaultRegion.spotPrice.toString(),
@@ -155,7 +162,7 @@ export class SpotInstanceService {
       // First, update existing instances in cache
       const cachedInstanceIds = Array.from(this.activeInstances.keys())
       logger.debug('Refreshing cached instance status', { instanceIds: cachedInstanceIds })
-      
+
       for (const instanceId of cachedInstanceIds) {
         try {
           const currentInfo = await this.getInstanceInfo(instanceId)
@@ -165,9 +172,9 @@ export class SpotInstanceService {
           })
         } catch (error) {
           // Instance might be terminated
-          logger.warn('Failed to refresh instance, removing from active list', { 
-            instanceId, 
-            error: (error as Error).message 
+          logger.warn('Failed to refresh instance, removing from active list', {
+            instanceId,
+            error: (error as Error).message
           })
           this.activeInstances.delete(instanceId)
         }
@@ -176,7 +183,7 @@ export class SpotInstanceService {
       // Then, scan for new instances that might have been created (e.g., spot replacement)
       logger.debug('Scanning for new instances')
       await this.loadExistingInstances()
-      
+
     } catch (error) {
       logger.error('Error refreshing instance status', error)
     }
@@ -187,8 +194,10 @@ export class SpotInstanceService {
       // Get all possible instance types from current region config
       const regionService = SpotRegionService.getInstance()
       const currentRegion = await regionService.getDefaultRegion()
-      const instanceTypes = currentRegion?.instanceTypes || [this.config.instanceType]
-      
+      const instanceTypes = uniq([
+        this.config.instanceType, ...(currentRegion?.instanceTypes || [])
+      ])
+
       logger.debug('Searching for existing instances', {
         region: this.ec2.config.region,
         instanceTypes,
@@ -214,11 +223,11 @@ export class SpotInstanceService {
       })
 
       let response = await this.ec2.send(command)
-      
+
       // If no instances found with current config, try broader search
       if (!response.Reservations || response.Reservations.length === 0) {
         logger.info('No instances found with current config, trying broader search...')
-        
+
         const fallbackCommand = new DescribeInstancesCommand({
           Filters: [
             {
@@ -226,12 +235,12 @@ export class SpotInstanceService {
               Values: ['running', 'pending', 'stopping']
             },
             {
-              Name: 'key-name', 
+              Name: 'key-name',
               Values: [this.config.keyName]
             }
           ]
         })
-        
+
         response = await this.ec2.send(fallbackCommand)
       }
 
@@ -250,9 +259,9 @@ export class SpotInstanceService {
               ...(instance.LaunchTime && { launchTime: instance.LaunchTime }),
               ...(instance.Placement?.AvailabilityZone && { availabilityZone: instance.Placement.AvailabilityZone })
             }
-            
+
             instances.push(instanceInfo)
-            
+
             // Only log if this is a new instance
             if (!this.activeInstances.has(instance.InstanceId)) {
               newInstancesCount++
@@ -262,19 +271,19 @@ export class SpotInstanceService {
                 publicIp: instanceInfo.publicIp
               })
             }
-            
+
             this.activeInstances.set(instance.InstanceId, instanceInfo)
           }
         }
       }
 
       if (newInstancesCount > 0) {
-        logger.info('Discovered new instances', { 
+        logger.info('Discovered new instances', {
           newInstancesCount,
           totalInstancesCount: instances.length
         })
       } else {
-        logger.debug('No new instances found', { 
+        logger.debug('No new instances found', {
           totalInstancesCount: instances.length
         })
       }
@@ -333,7 +342,7 @@ echo "Instance setup completed!"
 
   async launchSpotInstance(): Promise<SpotInstanceInfo> {
     try {
-      logger.info('Launching spot instance', { 
+      logger.info('Launching spot instance', {
         instanceType: this.config.instanceType,
         maxPrice: this.config.maxPrice,
         imageId: this.config.imageId,
@@ -380,19 +389,19 @@ echo "Instance setup completed!"
         throw new Error('Failed to create spot instance request')
       }
 
-      logger.info('Spot instance request created', { 
-        spotRequestId: spotRequest.SpotInstanceRequestId 
+      logger.info('Spot instance request created', {
+        spotRequestId: spotRequest.SpotInstanceRequestId
       })
 
       // Wait for instance to be assigned
       const instanceInfo = await this.waitForSpotInstance(spotRequest.SpotInstanceRequestId)
-      
+
       // Store in active instances
       this.activeInstances.set(instanceInfo.instanceId, instanceInfo)
 
-      logger.info('Spot instance launched successfully', { 
+      logger.info('Spot instance launched successfully', {
         instanceId: instanceInfo.instanceId,
-        spotRequestId: instanceInfo.spotRequestId 
+        spotRequestId: instanceInfo.spotRequestId
       })
 
       return instanceInfo
@@ -405,8 +414,8 @@ echo "Instance setup completed!"
 
   async launchSpotFleet(): Promise<SpotInstanceInfo> {
     try {
-      logger.info('Launching spot fleet', { 
-        instanceTypes: [this.config.instanceType, 'g6e.2xlarge'], // Fallback types
+      logger.info('Launching spot fleet', {
+        instanceTypes: [this.config.instanceType], // Fallback types
         maxPrice: this.config.maxPrice,
         imageId: this.config.imageId,
         keyName: this.config.keyName,
@@ -448,24 +457,24 @@ echo "Instance setup completed!"
 
       const command = new RequestSpotFleetCommand(fleetConfig)
       const response = await this.ec2.send(command)
-      
+
       if (!response.SpotFleetRequestId) {
         throw new Error('Failed to create spot fleet request')
       }
 
-      logger.info('Spot fleet request created', { 
-        spotFleetId: response.SpotFleetRequestId 
+      logger.info('Spot fleet request created', {
+        spotFleetId: response.SpotFleetRequestId
       })
 
       // Wait for fleet to launch instances
       const instanceInfo = await this.waitForSpotFleet(response.SpotFleetRequestId)
-      
+
       // Store in active instances
       this.activeInstances.set(instanceInfo.instanceId, instanceInfo)
 
-      logger.info('Spot fleet launched successfully', { 
+      logger.info('Spot fleet launched successfully', {
         instanceId: instanceInfo.instanceId,
-        spotFleetId: instanceInfo.spotFleetId 
+        spotFleetId: instanceInfo.spotFleetId
       })
 
       return instanceInfo
@@ -478,13 +487,13 @@ echo "Instance setup completed!"
 
   private async waitForSpotInstance(spotRequestId: string, maxWaitTime = 300000): Promise<SpotInstanceInfo> {
     const startTime = Date.now()
-    
+
     while (Date.now() - startTime < maxWaitTime) {
       try {
         const command = new DescribeSpotInstanceRequestsCommand({
           SpotInstanceRequestIds: [spotRequestId]
         })
-        
+
         const response = await this.ec2.send(command)
         const request = response.SpotInstanceRequests?.[0]
 
@@ -503,18 +512,18 @@ echo "Instance setup completed!"
           }
         }
 
-        logger.info('Waiting for spot instance...', { 
-          spotRequestId, 
-          state: request?.State 
+        logger.info('Waiting for spot instance...', {
+          spotRequestId,
+          state: request?.State
         })
-        
+
         await new Promise(resolve => setTimeout(resolve, 10000)) // Wait 10 seconds
       } catch (error: any) {
         // Handle case where spot request was immediately failed and removed
         if (error.name === 'InvalidSpotInstanceRequestID.NotFound') {
           throw new Error(`Spot request ${spotRequestId} failed immediately and was removed by AWS. This usually indicates configuration issues like invalid AMI, instance type not available in region, insufficient capacity, or network configuration problems.`)
         }
-        
+
         logger.error('Error checking spot instance status', error)
         throw error
       }
@@ -525,13 +534,13 @@ echo "Instance setup completed!"
 
   private async waitForSpotFleet(spotFleetId: string, maxWaitTime = 300000): Promise<SpotInstanceInfo> {
     const startTime = Date.now()
-    
+
     while (Date.now() - startTime < maxWaitTime) {
       try {
         const command = new DescribeSpotFleetRequestsCommand({
           SpotFleetRequestIds: [spotFleetId]
         })
-        
+
         const response = await this.ec2.send(command)
         const fleetRequest = response.SpotFleetRequestConfigs?.[0]
 
@@ -553,10 +562,10 @@ echo "Instance setup completed!"
               }
             ]
           })
-          
+
           const instancesResponse = await this.ec2.send(instancesCommand)
           const instance = instancesResponse.Reservations?.[0]?.Instances?.[0]
-          
+
           if (instance && instance.InstanceId) {
             const instanceInfo: SpotInstanceInfo = {
               instanceId: instance.InstanceId,
@@ -569,16 +578,16 @@ echo "Instance setup completed!"
               ...(instance.LaunchTime && { launchTime: instance.LaunchTime }),
               ...(instance.Placement?.AvailabilityZone && { availabilityZone: instance.Placement.AvailabilityZone })
             }
-            
+
             return instanceInfo
           }
         }
 
-        logger.info('Waiting for spot fleet to launch instances...', { 
-          spotFleetId, 
-          state: fleetRequest?.SpotFleetRequestState 
+        logger.info('Waiting for spot fleet to launch instances...', {
+          spotFleetId,
+          state: fleetRequest?.SpotFleetRequestState
         })
-        
+
         await new Promise(resolve => setTimeout(resolve, 10000)) // Wait 10 seconds
       } catch (error: any) {
         logger.error('Error checking spot fleet status', error)
@@ -626,7 +635,7 @@ echo "Instance setup completed!"
       })
 
       await this.ec2.send(command)
-      
+
       // Remove from active instances
       this.activeInstances.delete(instanceId)
 
@@ -639,13 +648,13 @@ echo "Instance setup completed!"
 
   async getAllActiveInstances(): Promise<SpotInstanceInfo[]> {
     const instances: SpotInstanceInfo[] = []
-    
+
     for (const [instanceId, info] of this.activeInstances.entries()) {
       try {
         // Refresh instance state
         const currentInfo = await this.getInstanceInfo(instanceId)
         const updatedInfo = { ...info, ...currentInfo }
-        
+
         // Update in map
         this.activeInstances.set(instanceId, updatedInfo)
         instances.push(updatedInfo)
@@ -662,17 +671,17 @@ echo "Instance setup completed!"
   async checkInstanceHealth(instanceId: string): Promise<boolean> {
     try {
       const info = await this.getInstanceInfo(instanceId)
-      
+
       if (info.state !== 'running' || !info.publicIp) {
         return false
       }
 
       // Check AI service health endpoint
       const healthUrl = `http://${info.publicIp}:8000/health`
-      const response = await axios.get(healthUrl, { 
-        timeout: 10000 
+      const response = await axios.get(healthUrl, {
+        timeout: 10000
       })
-      
+
       return response.status === 200
     } catch (error) {
       logger.warn('Instance health check failed', { instanceId, error })
@@ -692,21 +701,115 @@ echo "Instance setup completed!"
     try {
       const instances = await this.getAllActiveInstances()
       const runningInstance = instances.find(i => i.state === 'running' && i.publicIp)
-      
+
       if (runningInstance && runningInstance.publicIp) {
         const serviceUrl = `http://${runningInstance.publicIp}:8000`
-        logger.info('Found active AI service', { 
+        logger.info('Found active AI service', {
           instanceId: runningInstance.instanceId,
-          serviceUrl 
+          serviceUrl
         })
         return serviceUrl
       }
-      
+
       logger.warn('No running AI service instances found')
       return null
     } catch (error) {
       logger.error('Error getting active AI service URL', error)
       return null
+    }
+  }
+
+  /**
+   * Handle EC2 state change events from EventBridge
+   */
+  async handleInstanceStateChange(instanceId: string, newState: string): Promise<void> {
+    try {
+      logger.info('Handling instance state change event', { instanceId, newState })
+
+      // Check if this is one of our instances
+      const existingInstance = this.activeInstances.get(instanceId)
+
+      if (existingInstance) {
+        // Update state in our cache
+        existingInstance.state = newState
+        this.activeInstances.set(instanceId, existingInstance)
+
+        logger.info('Updated instance state in cache', { instanceId, newState })
+      } else if (newState === 'running' || newState === 'pending') {
+        // This might be a new instance we launched, try to discover it
+        logger.info('New instance detected, triggering discovery', { instanceId, newState })
+        await this.loadExistingInstances()
+      }
+
+      // Handle specific state changes
+      switch (newState) {
+        case 'running':
+          await this.handleInstanceRunning(instanceId)
+          break
+        case 'terminated':
+          await this.handleInstanceTerminated(instanceId)
+          break
+        case 'stopped':
+          await this.handleInstanceStopped(instanceId)
+          break
+      }
+
+    } catch (error) {
+      logger.error('Error handling instance state change', { instanceId, newState, error })
+    }
+  }
+
+  /**
+   * Handle instance entering running state
+   */
+  private async handleInstanceRunning(instanceId: string): Promise<void> {
+    try {
+      logger.info('Instance entered running state', { instanceId })
+
+      // Refresh instance info to get IP address
+      const instanceInfo = await this.getInstanceInfo(instanceId)
+      this.activeInstances.set(instanceId, instanceInfo)
+
+      // Could add health check or notification here
+
+    } catch (error) {
+      logger.error('Error handling running instance', { instanceId, error })
+    }
+  }
+
+  /**
+   * Handle instance termination
+   */
+  private async handleInstanceTerminated(instanceId: string): Promise<void> {
+    try {
+      logger.info('Instance terminated, removing from active instances', { instanceId })
+
+      // Remove from our cache
+      this.activeInstances.delete(instanceId)
+
+      // Could trigger automatic replacement here if needed
+
+    } catch (error) {
+      logger.error('Error handling terminated instance', { instanceId, error })
+    }
+  }
+
+  /**
+   * Handle instance stopping
+   */
+  private async handleInstanceStopped(instanceId: string): Promise<void> {
+    try {
+      logger.info('Instance stopped', { instanceId })
+
+      // Update state but keep in cache for potential restart
+      const existingInstance = this.activeInstances.get(instanceId)
+      if (existingInstance) {
+        existingInstance.state = 'stopped'
+        this.activeInstances.set(instanceId, existingInstance)
+      }
+
+    } catch (error) {
+      logger.error('Error handling stopped instance', { instanceId, error })
     }
   }
 }
