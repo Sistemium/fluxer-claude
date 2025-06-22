@@ -6,7 +6,7 @@ meta:
 <template>
   <v-container>
     <v-row justify="center">
-      <v-col cols="12" md="8" lg="6">
+      <v-col cols="12" sm="6">
         <GenerateForm
           v-model="formData"
           :disabled="imagesStore.isGenerating"
@@ -14,10 +14,10 @@ meta:
           @submit="generateImage"
         />
       </v-col>
+      <!-- Child routes (like [jobId]) will be rendered here -->
+      <router-view />
     </v-row>
     
-    <!-- Child routes (like [jobId]) will be rendered here -->
-    <router-view />
   </v-container>
 </template>
 

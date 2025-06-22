@@ -22,7 +22,7 @@ declare module 'vue-router/auto-routes' {
     '/admin': RouteRecordInfo<'/admin', '/admin', Record<never, never>, Record<never, never>>,
     '/auth': RouteRecordInfo<'/auth', '/auth', Record<never, never>, Record<never, never>>,
     '/gallery': RouteRecordInfo<'/gallery', '/gallery', Record<never, never>, Record<never, never>>,
-    '/generate/': RouteRecordInfo<'/generate/', '/generate', Record<never, never>, Record<never, never>>,
+    '/generate': RouteRecordInfo<'/generate', '/generate', Record<never, never>, Record<never, never>>,
     '/generate/[jobId]': RouteRecordInfo<'/generate/[jobId]', '/generate/:jobId', { jobId: ParamValue<true> }, { jobId: ParamValue<false> }>,
   }
 }

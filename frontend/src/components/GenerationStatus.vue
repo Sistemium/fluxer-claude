@@ -1,7 +1,6 @@
 <template>
   <v-card>
     <v-card-title class="text-center">
-      <v-icon left>mdi-restore</v-icon>
       Generation Status
     </v-card-title>
     <v-card-text class="text-center">
@@ -9,13 +8,10 @@
         <!-- Show completed image -->
         <v-img
           :src="generatedImage"
-          :width="400"
-          :height="400"
           class="mx-auto mb-4"
-          cover
+          contain
         ></v-img>
         <v-alert type="success" variant="tonal" class="mb-4">
-          <v-icon start>mdi-check-circle</v-icon>
           Generation completed!
         </v-alert>
       </div>

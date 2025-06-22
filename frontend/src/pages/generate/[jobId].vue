@@ -4,17 +4,15 @@ meta:
 </route>
 
 <template>
-  <v-row justify="center" class="mt-4">
-    <v-col cols="12" md="8" lg="6">
-      <GenerationStatus :job-id="jobId"
-                        :is-generating="generation?.status === 'generating'"
-                        :progress="generation?.progress || 0"
-                        :message="generation?.message || ''"
-                        :error="generation?.error || null"
-                        :generated-image="generation?.image?.imageUrl || null"
-                        :show-restore-message="showRestoreMessage" />
-    </v-col>
-  </v-row>
+  <v-col cols="12" sm="6">
+    <GenerationStatus :job-id="jobId"
+                      :is-generating="generation?.status === 'generating'"
+                      :progress="generation?.progress || 0"
+                      :message="generation?.message || ''"
+                      :error="generation?.error || null"
+                      :generated-image="generation?.image?.imageUrl || null"
+                      :show-restore-message="showRestoreMessage" />
+  </v-col>
 </template>
 
 <script setup lang="ts">
