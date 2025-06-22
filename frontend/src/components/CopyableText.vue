@@ -4,8 +4,7 @@
     <v-btn
       icon="mdi-content-copy"
       size="x-small"
-      variant="text"
-      :color="iconColor"
+      variant="tonal"
       @click="copyToClipboard"
       class="ml-2"
     >
