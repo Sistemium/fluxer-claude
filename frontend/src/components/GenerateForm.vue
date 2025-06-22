@@ -4,8 +4,7 @@
     <v-card-text>
       <v-form @submit.prevent="onSubmit">
         <v-textarea
-          :model-value="modelValue.prompt"
-          @update:model-value="updateField('prompt', $event)"
+          v-model="model.prompt"
           label="Enter your prompt"
           placeholder="A beautiful sunset over mountains..."
           rows="4"
@@ -36,8 +35,7 @@
         <v-row class="mt-4">
           <v-col cols="6">
             <v-select
-              :model-value="modelValue.width"
-              @update:model-value="updateField('width', $event)"
+              v-model="model.width"
               :items="dimensions"
               label="Width"
               variant="outlined"
@@ -46,8 +44,7 @@
           </v-col>
           <v-col cols="6">
             <v-select
-              :model-value="modelValue.height"
-              @update:model-value="updateField('height', $event)"
+              v-model="model.height"
               :items="dimensions"
               label="Height"
               variant="outlined"
@@ -59,8 +56,7 @@
         <v-row class="mt-2">
           <v-col cols="6">
             <v-text-field
-              :model-value="modelValue.num_inference_steps"
-              @update:model-value="updateField('num_inference_steps', Number($event))"
+              v-model.number="model.num_inference_steps"
               type="number"
               :min="10"
               :max="100"
@@ -73,8 +69,7 @@
           </v-col>
           <v-col cols="6">
             <v-text-field
-              :model-value="modelValue.guidance_scale"
-              @update:model-value="updateField('guidance_scale', Number($event))"
+              v-model.number="model.guidance_scale"
               type="number"
               :min="1"
               :max="20"
@@ -88,16 +83,18 @@
           </v-col>
         </v-row>
 
-        <v-btn
-          type="submit"
-          color="primary"
-          block
-          size="large"
-          :loading="loading"
-          :disabled="!modelValue.prompt.trim() || disabled"
-        >
-          Generate Image
-        </v-btn>
+        <v-row class="pa-2">
+          <v-btn
+            type="submit"
+            color="primary"
+            block
+            size="large"
+            :loading="loading"
+            :disabled="!model.prompt.trim() || disabled"
+          >
+            Generate Image
+          </v-btn>
+        </v-row>
       </v-form>
     </v-card-text>
   </v-card>
@@ -109,13 +106,11 @@ import { TokenService } from '@/services/tokenService'
 import { type GenerationRequest } from '@/stores/images'
 
 interface Props {
-  modelValue: GenerationRequest
   disabled?: boolean
   loading?: boolean
 }
 
 interface Emits {
-  (e: 'update:modelValue', value: GenerationRequest): void
   (e: 'submit', data: GenerationRequest): void
 }
 
@@ -126,18 +121,13 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
+const model = defineModel<GenerationRequest>({ required: true })
+
 const dimensions = [256, 512, 768, 1024]
 
-const tokenCount = computed(() => TokenService.estimateTokens(props.modelValue.prompt))
-
-const updateField = <K extends keyof GenerationRequest>(field: K, value: GenerationRequest[K]) => {
-  emit('update:modelValue', {
-    ...props.modelValue,
-    [field]: value
-  })
-}
+const tokenCount = computed(() => TokenService.estimateTokens(model.value.prompt))
 
 const onSubmit = () => {
-  emit('submit', props.modelValue)
+  emit('submit', model.value)
 }
 </script>

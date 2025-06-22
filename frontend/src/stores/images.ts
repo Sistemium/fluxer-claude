@@ -20,6 +20,12 @@ export interface GenerationRequest {
   num_inference_steps?: number
 }
 
+export interface GenerationResponse {
+  jobId: string
+  status: "queued"
+  message: string
+}
+
 export const useImagesStore = defineStore('images', () => {
   const images = ref<GeneratedImage[]>([])
   const isGenerating = ref(false)
@@ -89,7 +95,7 @@ export const useImagesStore = defineStore('images', () => {
     }
   }
 
-  async function generateImage(request: GenerationRequest) {
+  async function generateImage(request: GenerationRequest): Promise<{ jobId: string }> {
     try {
       // Initialize WebSocket if not already done
       await initializeWebSocket()
@@ -99,50 +105,16 @@ export const useImagesStore = defineStore('images', () => {
       generationProgress.value = 0
       generationMessage.value = 'Starting generation...'
 
-      const response = await api.post('/generate', request)
+      const response = await api.post<GenerationResponse>('/generate', request)
       const { jobId } = response.data
       currentJobId.value = String(jobId)
       console.log('Generation started with jobId:', jobId, 'type:', typeof jobId)
 
-      // Update URL to include jobId for state restoration
-      if (navigationCallback.value) {
-        navigationCallback.value(`/generate/${jobId}`)
-      }
+      // Setup WebSocket callbacks but don't wait for completion
+      setupWebSocketCallbacks(jobId)
 
-      // Return a promise that resolves when generation completes
-      return new Promise<GeneratedImage>((resolve, reject) => {
-        console.log('Setting up WebSocket callbacks for job:', jobId)
-        
-        // Register progress callback for this job
-        socketService.onProgress(jobId, (progress) => {
-          console.log('Progress for job:', jobId, progress.progress)
-          generationProgress.value = progress.progress
-          generationMessage.value = progress.message || 'Generating...'
-        })
-        
-        // Register completion callback for this job
-        socketService.onCompleted(jobId, async (completed) => {
-          console.log('Completion for job:', jobId)
-          try {
-            const image = await handleJobCompletion(jobId)
-            socketService.unsubscribe(jobId)
-            resolve(image)
-          } catch (error) {
-            socketService.unsubscribe(jobId)
-            reject(error)
-          }
-        })
-        
-        // Register error callback for this job
-        socketService.onError(jobId, (error) => {
-          console.log('Error for job:', jobId, error.error)
-          generationError.value = error.error
-          isGenerating.value = false
-          currentJobId.value = null
-          socketService.unsubscribe(jobId)
-          reject(new Error(error.error))
-        })
-      })
+      // Return jobId immediately for navigation
+      return { jobId: String(jobId) }
     } catch (error: any) {
       generationError.value = error.response?.data?.error || 'Failed to generate image'
       console.error('Generation error:', error)
@@ -151,13 +123,40 @@ export const useImagesStore = defineStore('images', () => {
       generationMessage.value = ''
       currentJobId.value = null
       
-      // Update URL back to /generate on error
-      if (navigationCallback.value) {
-        navigationCallback.value('/generate')
-      }
-      
       throw error
     }
+  }
+
+  function setupWebSocketCallbacks(jobId: string) {
+    console.log('Setting up WebSocket callbacks for job:', jobId)
+    
+    // Register progress callback for this job
+    socketService.onProgress(jobId, (progress) => {
+      console.log('Progress for job:', jobId, progress.progress)
+      generationProgress.value = progress.progress
+      generationMessage.value = progress.message || 'Generating...'
+    })
+    
+    // Register completion callback for this job
+    socketService.onCompleted(jobId, async () => {
+      console.log('Completion for job:', jobId)
+      try {
+        await handleJobCompletion(jobId)
+        socketService.unsubscribe(jobId)
+      } catch (error) {
+        console.error('Error handling completion:', error)
+        socketService.unsubscribe(jobId)
+      }
+    })
+    
+    // Register error callback for this job
+    socketService.onError(jobId, (error) => {
+      console.log('Error for job:', jobId, error.error)
+      generationError.value = error.error
+      isGenerating.value = false
+      currentJobId.value = null
+      socketService.unsubscribe(jobId)
+    })
   }
 
 
@@ -192,7 +191,7 @@ export const useImagesStore = defineStore('images', () => {
       
       if (!status) {
         console.log('Job not found, redirecting to generate page')
-        return false
+        return undefined
       }
       
       currentJobId.value = jobId
@@ -215,7 +214,7 @@ export const useImagesStore = defineStore('images', () => {
           generationMessage.value = progress.message || 'Generating...'
         })
         
-        socketService.onCompleted(jobId, async (completed) => {
+        socketService.onCompleted(jobId, async () => {
           console.log('Restored completion for job:', jobId)
           try {
             await handleJobCompletion(jobId)
