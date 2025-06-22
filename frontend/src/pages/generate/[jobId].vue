@@ -4,12 +4,18 @@ meta:
 </route>
 
 <template>
-  <v-row justify="center" class="mt-4">
-    <v-col cols="12" md="8" lg="6">
-      <GenerationStatus :job-id="jobId" :is-generating="imagesStore.isGenerating"
-        :progress="imagesStore.generationProgress" :message="imagesStore.generationMessage"
-        :error="imagesStore.generationError" :generated-image="generatedImage"
-        :show-restore-message="showRestoreMessage" />
+  <v-row justify="center"
+         class="mt-4">
+    <v-col cols="12"
+           md="8"
+           lg="6">
+      <GenerationStatus :job-id="jobId"
+                        :is-generating="imagesStore.isGenerating"
+                        :progress="imagesStore.generationProgress"
+                        :message="imagesStore.generationMessage"
+                        :error="imagesStore.generationError"
+                        :generated-image="generatedImage"
+                        :show-restore-message="showRestoreMessage" />
     </v-col>
   </v-row>
 </template>
