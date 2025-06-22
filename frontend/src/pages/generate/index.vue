@@ -7,103 +7,12 @@ meta:
   <v-container>
     <v-row>
       <v-col cols="12" md="6">
-        <v-card>
-          <v-card-title>Generate Image</v-card-title>
-          <v-card-text>
-            <v-form @submit.prevent="generateImage">
-              <v-textarea
-                v-model="prompt"
-                label="Enter your prompt"
-                placeholder="A beautiful sunset over mountains..."
-                rows="4"
-                variant="outlined"
-                :disabled="imagesStore.isGenerating"
-              ></v-textarea>
-              
-              <!-- Token Counter -->
-              <div class="text-caption mt-2 mb-4">
-                <v-chip 
-                  :color="tokenCount > 77 ? 'error' : tokenCount > 60 ? 'warning' : 'success'"
-                  size="small"
-                  class="mr-2"
-                >
-                  <v-icon left size="small">mdi-counter</v-icon>
-                  {{ tokenCount }} / 77 tokens
-                </v-chip>
-                <span class="text-grey-darken-1">
-                  <template v-if="tokenCount <= 77">
-                    ✓ Optimal for CLIP encoder
-                  </template>
-                  <template v-else>
-                    ⚠ Exceeds CLIP limit ({{ tokenCount - 77 }} tokens will be ignored)
-                  </template>
-                </span>
-              </div>
-
-              <v-row class="mt-4">
-                <v-col cols="6">
-                  <v-select
-                    v-model="width"
-                    :items="dimensions"
-                    label="Width"
-                    variant="outlined"
-                    :disabled="imagesStore.isGenerating"
-                  ></v-select>
-                </v-col>
-                <v-col cols="6">
-                  <v-select
-                    v-model="height"
-                    :items="dimensions"
-                    label="Height"
-                    variant="outlined"
-                    :disabled="imagesStore.isGenerating"
-                  ></v-select>
-                </v-col>
-              </v-row>
-
-              <v-row class="mt-2">
-                <v-col cols="6">
-                  <v-text-field
-                    v-model="num_inference_steps"
-                    type="number"
-                    :min="10"
-                    :max="100"
-                    label="Inference Steps"
-                    variant="outlined"
-                    :disabled="imagesStore.isGenerating"
-                    hint="10-100 steps (more = better quality, slower)"
-                    persistent-hint
-                  ></v-text-field>
-                </v-col>
-                <v-col cols="6">
-                  <v-text-field
-                    v-model="guidance_scale"
-                    type="number"
-                    :min="1"
-                    :max="20"
-                    :step="0.5"
-                    label="Guidance Scale"
-                    variant="outlined"
-                    :disabled="imagesStore.isGenerating"
-                    hint="1-20 (higher = follows prompt more strictly)"
-                    persistent-hint
-                  ></v-text-field>
-                </v-col>
-              </v-row>
-
-              <v-btn
-                type="submit"
-                color="primary"
-                block
-                size="large"
-                :loading="imagesStore.isGenerating"
-                :disabled="!prompt.trim()"
-              >
-                Generate Image
-              </v-btn>
-            </v-form>
-          </v-card-text>
-        </v-card>
+        <GenerateForm
+          v-model="formData"
+          :disabled="imagesStore.isGenerating"
+          :loading="imagesStore.isGenerating"
+          @submit="generateImage"
+        />
       </v-col>
 
       <v-col cols="12" md="6">
@@ -171,10 +80,10 @@ meta:
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useImagesStore } from '@/stores/images'
-import { TokenService } from '@/services/tokenService'
+import GenerateForm, { type GenerateFormData } from '@/components/GenerateForm.vue'
 
 // Props for jobId when coming from URL
 const props = defineProps<{
@@ -185,33 +94,27 @@ const route = useRoute()
 const router = useRouter()
 const imagesStore = useImagesStore()
 
-const prompt = ref('')
-const width = ref(Number(import.meta.env.VITE_DEFAULT_WIDTH) || 512)
-const height = ref(Number(import.meta.env.VITE_DEFAULT_HEIGHT) || 512)
-const guidance_scale = ref(Number(import.meta.env.VITE_DEFAULT_GUIDANCE_SCALE) || 7.5)
-const num_inference_steps = ref(Number(import.meta.env.VITE_DEFAULT_NUM_INFERENCE_STEPS) || 50)
+const formData = reactive<GenerateFormData>({
+  prompt: '',
+  width: Number(import.meta.env.VITE_DEFAULT_WIDTH) || 1024,
+  height: Number(import.meta.env.VITE_DEFAULT_HEIGHT) || 1024,
+  guidance_scale: Number(import.meta.env.VITE_DEFAULT_GUIDANCE_SCALE) || 3.5,
+  num_inference_steps: Number(import.meta.env.VITE_DEFAULT_NUM_INFERENCE_STEPS) || 50
+})
+
 const generatedImage = ref<string | null>(null)
 const isRestoredSession = ref(false)
 
-const dimensions = [256, 512, 768, 1024]
 
-// Simple token counter (approximation for CLIP)
-// CLIP tokenizer splits on spaces and punctuation, so this is a rough estimate
-const tokenCount = computed(() => TokenService.estimateTokens(prompt.value))
-
-async function generateImage () {
-  if (!prompt.value.trim()) return
+async function generateImage (data?: GenerateFormData) {
+  const generateData = data || formData
+  
+  if (!generateData.prompt.trim()) return
 
   generatedImage.value = null
 
   try {
-    const result = await imagesStore.generateImage({
-      prompt: prompt.value,
-      width: width.value,
-      height: height.value,
-      guidance_scale: guidance_scale.value,
-      num_inference_steps: num_inference_steps.value
-    })
+    const result = await imagesStore.generateImage(generateData)
     
     generatedImage.value = result.imageUrl
   } catch (error) {
