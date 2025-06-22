@@ -39,32 +39,6 @@ export interface GenerationResponse {
 export const useImagesStore = defineStore('images', () => {
   const images = ref<GeneratedImage[]>([])
   const generations = ref(new Map<string, GenerationInfo>())
-  const navigationCallback = ref<((path: string) => void) | null>(null)
-  
-  // Computed for backwards compatibility
-  const isGenerating = computed(() => {
-    return Array.from(generations.value.values()).some(gen => gen.status === 'generating')
-  })
-  
-  const generationError = computed(() => {
-    const errorGen = Array.from(generations.value.values()).find(gen => gen.error)
-    return errorGen?.error || null
-  })
-  
-  const generationProgress = computed(() => {
-    const activeGen = Array.from(generations.value.values()).find(gen => gen.status === 'generating')
-    return activeGen?.progress || 0
-  })
-  
-  const generationMessage = computed(() => {
-    const activeGen = Array.from(generations.value.values()).find(gen => gen.status === 'generating')
-    return activeGen?.message || ''
-  })
-  
-  const currentJobId = computed(() => {
-    const activeGen = Array.from(generations.value.values()).find(gen => gen.status === 'generating')
-    return activeGen?.jobId || null
-  })
 
   // WebSocket initialization flag
   let isWebSocketInitialized = false
@@ -322,24 +296,14 @@ export const useImagesStore = defineStore('images', () => {
     return computed(() => generations.value.get(jobId))
   }
 
-  // Function to set navigation callback to avoid circular imports
-  function setNavigationCallback(callback: (path: string) => void) {
-    navigationCallback.value = callback
-  }
 
   return {
     images,
     generations,
-    isGenerating,
-    generationError,
-    generationProgress,
-    generationMessage,
-    currentJobId,
     generateImage,
     loadImages,
     deleteImage,
     restoreGenerationState,
-    getGenerationInfo,
-    setNavigationCallback
+    getGenerationInfo
   }
 })

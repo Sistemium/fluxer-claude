@@ -42,11 +42,6 @@ const generation = imagesStore.getGenerationInfo(jobId)
 
 // Restore generation state on mount
 onMounted(async () => {
-  // Set navigation callback for the store
-  imagesStore.setNavigationCallback((path: string) => {
-    router.push(path)
-  })
-
   console.log('Restoring generation state for jobId:', jobId)
 
   try {
