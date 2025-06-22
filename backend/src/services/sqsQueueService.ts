@@ -50,13 +50,14 @@ export class SQSQueueService {
     return SQSQueueService.instance
   }
 
-  async addJob(data: Omit<GenerationJobData, 'jobId'>): Promise<string> {
-    const jobId = uuidv4()
+  async addJob(data: Omit<GenerationJobData, 'jobId'> & { jobId?: string }): Promise<string> {
+    const jobId = data.jobId || uuidv4()
     const jobData: GenerationJobData = { ...data, jobId }
     
     logger.info('Adding job to SQS queue', { jobId, userId: data.userId })
     
     try {
+      // Add to SQS queue
       const params = {
         QueueUrl: this.queueUrl,
         MessageBody: JSON.stringify(jobData),
@@ -79,25 +80,39 @@ export class SQSQueueService {
       const command = new SendMessageCommand(params)
       const result = await this.sqs.send(command)
       
-      // Create image record in database
-      const image = new Image({
-        userId: data.userId,
-        prompt: data.prompt,
-        width: data.width,
-        height: data.height,
-        guidanceScale: data.guidance_scale,
-        numInferenceSteps: data.num_inference_steps,
-        seed: data.seed,
-        jobId,
-        status: 'generating'
-      })
-      await image.save()
+      // Check if image record already exists (for retries)
+      let image = await Image.findOne({ jobId })
       
-      logger.info('Job added to SQS queue successfully', { 
-        jobId, 
-        messageId: result.MessageId,
-        imageId: image._id
-      })
+      if (image) {
+        // Update existing record for retry
+        image.status = 'generating'
+        image.updatedAt = new Date()
+        await image.save()
+        logger.info('Updated existing job for retry', { 
+          jobId, 
+          messageId: result.MessageId,
+          imageId: image._id
+        })
+      } else {
+        // Create new image record in database
+        image = new Image({
+          userId: data.userId,
+          prompt: data.prompt,
+          width: data.width,
+          height: data.height,
+          guidanceScale: data.guidance_scale,
+          numInferenceSteps: data.num_inference_steps,
+          seed: data.seed,
+          jobId,
+          status: 'generating'
+        })
+        await image.save()
+        logger.info('Created new job record', { 
+          jobId, 
+          messageId: result.MessageId,
+          imageId: image._id
+        })
+      }
       
       return jobId
     } catch (error) {
@@ -343,6 +358,7 @@ export class SQSQueueService {
       throw error
     }
   }
+
 
   stopProcessing() {
     this.isProcessing = false

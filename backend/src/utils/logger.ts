@@ -1,5 +1,7 @@
 import winston from 'winston'
 
+console.log('winston', process.env.LOG_LEVEL)
+
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(

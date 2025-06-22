@@ -146,8 +146,6 @@ export class MqttService {
         await this.handleProgressMessage(topic, message)
       } else if (topic.startsWith('fluxer/ai/error/')) {
         await this.handleErrorMessage(topic, message)
-      } else {
-        logger.warn('Unknown MQTT topic', { topic })
       }
     } catch (error) {
       logger.error('Error handling MQTT message', { topic, error })

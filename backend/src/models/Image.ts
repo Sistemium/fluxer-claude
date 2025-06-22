@@ -10,7 +10,7 @@ export interface IImage extends Document {
   numInferenceSteps: number
   seed?: number
   jobId: string
-  status: 'generating' | 'completed' | 'failed'
+  status: 'generating' | 'completed' | 'failed' | 'queued'
   createdAt: Date
   updatedAt: Date
 }
@@ -27,7 +27,7 @@ const ImageSchema = new Schema<IImage>({
   jobId: { type: String, required: true, unique: true },
   status: { 
     type: String, 
-    enum: ['generating', 'completed', 'failed'], 
+    enum: ['generating', 'completed', 'failed', 'queued'], 
     default: 'generating' 
   }
 }, {
